@@ -1,0 +1,32 @@
+# Inconspicuous-Backup-Service
+
+Inconspicuous Backup Service is a service meant to to run on a dedicated backup server. It backups data from other Linux and Unix-like servers via SSH. There is no need for installing a backup agent on those servers nor doing any special configuration on these hosts, despite SSH access configuration.
+
+## Overview
+
+To give you an impression about what to expect, here is an brief overview. There are no details provided. Those you will find in separate README.TXT files within the configuration folders. So please go ahead and download the package to get detailed information.
+
+### Installation overview
+
+The installation and initial configuration on the backup server itself is quite some work. Additionally the backup server needs good hardening and shouldn't do anything but backup, because its root user has also root access to all other servers /hosts. Therefore you might want to get your hands on a preconfigured backup appliance. If you do the job yourself, you work your way through the following steps:
+* Download the package and extract it to "/opt/inconspicuous_backup_service" 
+* Follow the instructions in "/opt/inconspicuous_backup_service/README.TXT".
+ * Create / mount a First Level Backup Directory, where all data from all hosts gets cloned to. 
+ * Create / mount a directory, where reports get stored to. Ideally this directory is on an internal web server. 
+ * Extend the configuration of the Cron daemon using the provided Cron configuration file.
+ * Edit the basic configuration file "/opt/inconspicuous_backup_service/configuration.json". 
+ * Create a small configuration file for each host within "/opt/inconspicuous_backup_service/hosts/". 
+ * Establish a public, private key authenticated SSH connection to each host. 
+ * Test your configuration. (If you combine Inconspicuous Backup Service with another backup solution, at this point you are done.) 
+ * Create a small configuration file for each backup storage within "/opt/inconspicuous_backup_service/storages/". 
+ * Create a very small configuration file for each backup job within "/opt/inconspicuous_backup_service/jobs/". 
+ * Create symbolic links to the job files within the subdirectories of "/opt/inconspicuous_backup_service/schedule/". 
+ * Test your configuration.
+ 
+### Concept and feature overview
+
+In contrast to all the requirements regarding the backup server itself there are almost no special requirements for the hosts (the servers you want to backup). You should be able to backup files and services from almost any Unix like operating system, including Linux, BSD and MacOS X. The only requirement is an SSH server running on a host, that allows public, private key authentication. So you can backup a 20 years old Unix server as well as a future Linux server, that will be released five years in the future. That’s the key feature of Inconspicuous Backup Service.
+
+Another important feature is the flexibility of Inconspicuous Backup Service regarding integration with other backup solutions. This flexibility is achieved through the design of the backup process itself. First Inconspicuous Backup Service creates database dumps of configured services like MySQL on the hosts themselves. Then it clones those dumps and all configured folders to its First Level Backup Directory, using Rsync. After the synchronisation process, Inconspicuous Backup Service can either create backups of the cloned folders itself or leave the job to another backup solution. So Inconspicuous Backup Service can be used to simplify the Linux/BSD/Unix integration with an enterprise grade backup solution or to add network backup support to a single host backup solution.
+
+All these features you can achieve with rather simple backup scripts, you create on your own. But there is more to it than just the core functionality of a good backup script. The configuration files of Inconspicuous Backup Service are very easy to manage, compared to editing a script. With the integrated test feature, integration of new hosts can be tested in no time. And most important of all, Inconspicuous Backup Service provides a centralized and very well designed report system. It enables you to decide within seconds, if everything works as expected, and delivers also detailed information whenever required.
