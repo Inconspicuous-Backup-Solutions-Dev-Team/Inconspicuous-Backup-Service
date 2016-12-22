@@ -21,7 +21,7 @@
 How to configure SSH access for your backup server to your Linux servers (hosts).
 
 
-1. Create an SSH key for root on your backup server
+1. Create a SSH key for root on your backup server
 
 Preconditions:
 - You are logged in as user "root" in a terminal of your backup server.
@@ -29,11 +29,11 @@ Enter:
 ------
 ssh-keygen -t rsa -b 4096
 ------
-Leave the password empty! - With this command you generate a public private key pair for logging in via SSH. You have
-to do this only once! - If you have already done this step once, please continue with Step 2.
+Leave the password empty! - With this command you generate a public private key pair for logging in via SSH. You only
+have to do this once! - If you have already done this step once, please continue with Step 2.
 
 
-2. Allow SSH access for "root" using a password to login on you host.
+2. Allow SSH access for "root" using a password to login to your host.
 
 Preconditions:
 - You are able to login as "root" to your host.
@@ -43,12 +43,12 @@ Enter:
 sudo sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
 ------
 This changes SSH daemon configuration to allow "root" to login via SSH using a password.
-Enter 1 of:
------------
+Enter 1 of the following commands:
+----------------------------------
 sudo /etc/init.d/sshd restart
 sudo systemctl restart sshd
------------
-First line is to restart SSH daemon on a a system with System V Init.
+----------------------------------
+First line is to restart SSH daemon on a system with System V Init.
 Second line should only work on systems using Systemd.
 
 
@@ -62,10 +62,10 @@ ssh-copy-id -i ~/.ssh/id_rsa.pub root@<HOST>
 ------
 Replace <HOST> with the host name or IP address of the host you want to backup. 
 With this command you install the key on your host which grants root access to your host
-to backup severs root user.
+to backup servers root user.
 
 
-4. Allow SSH access for "root" using a password to login on you host.
+4. Allow SSH access for "root" using a password to login to your host.
 
 Preconditions:
 - You are able to login as "root" to your host.
@@ -76,12 +76,12 @@ sudo sed -i 's/PermitRootLogin yes/PermitRootLogin prohibit-password/' /etc/ssh/
 ------
 This changes SSH daemon configuration back to not allow "root" to login via SSH using a password.
 
-Enter 4 of:
------------
+Enter 1 of the following commands:
+----------------------------------
 sudo /etc/init.d/sshd restart
 sudo systemctl restart sshd
------------
-First line is to restart SSH daemon on a a system with System V Init.
+----------------------------------
+First line is to restart SSH daemon on a system with System V Init.
 Second line should only work on systems using Systemd.
 
 
@@ -93,5 +93,5 @@ Enter:
 ------
 ssh root@<HOST>
 ------
-Replace <HOST> with the host name or IP address of the host you want to backup.
+Replace <HOST> with the host name or the IP address of the host you want to backup.
 You should see no password prompt and instantaneously become root on <HOST>.
