@@ -66,7 +66,7 @@ After general configuration of SSH and the basic configuration, host
 configurations are the next important thing to create.
 
 All host configuration files will live quite happily in the directory
-"./conf/hosts". Within this directory you will find another "README.TXT" file
+"./conf/hosts". Within this directory you will find another "README.md" file
 that explains the content of host configuration files in detail.
 
 To wrap up, a host configuration file defines a host and which of its
@@ -82,7 +82,7 @@ Having done the preparations and the basic configuration and having defined
 where the data comes from, it's time to write down where the backups will be
 stored.
 This task is done by the configuration files in "./conf/storages". Within this
-directory you’ll find another README.TXT file, that explains the content of
+directory you’ll find another "README.md" file, that explains the content of
 storage configuration files in detail.
 
 In short, each storage configuration file represents a storage target
@@ -95,7 +95,7 @@ Basic set-up is done. You have your hosts where the data is coming from. You
 have your storages where the backups are written to. Time to tie it all
 together.
 To do so you create jobs. Job configuration files can to be found in
-"./conf/jobs". Within this directory you will find another "README.TXT" file,
+"./conf/jobs". Within this directory you will find another "README.md" file,
 that explains the content of job configuration files in detail.
 To sum it up a job simply says: "Write the backup from this host to this
 backup storage."
