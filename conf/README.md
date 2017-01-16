@@ -1,26 +1,4 @@
-# ----------------------------------------------------------------------------------------------------------------------
 # Inconspicuous Backup Service
-#
-# Copyright 2016 by Inconspicuous Backup Solutions Dev. Team, Christian Beuschel <chris109@web.de>
-#
-# This file is part of Inconspicuous Backup Service.
-#
-# Inconspicuous Backup Service is free software: you can redistribute it and/or modify it under the terms of the
-# GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# Inconspicuous Backup Service is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
-# even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
-# for more details.
-# 
-# You should have received a copy of the GNU General Public License along with Inconspicuous Backup Service. If not,
-# see <http://www.gnu.org/licenses/>.
-# 
-# ----------------------------------------------------------------------------------------------------------------------
-
-============================
-Inconspicuous Backup Service
-============================
 
 This software backs up data over network from Linux and Unix-like servers and
 workstations. It's meant to run on a dedicated backup server. The machines which
@@ -36,8 +14,8 @@ host's copy of data is backed up to which storage is defined in a job definition
 When each job will run is defined via symbolic links in the schedule
 configuration directories.
 
-Basic Configuration:
---------------------
+## Basic Configuration:
+
 You don't have to install any specific software on the clients themselves.
 However, you have to enable the root user of the backup server to access all
 clients via SSH without using a password. How to use certificates instead of
@@ -53,6 +31,7 @@ hardened.)
 For main configuration you edit the file "configuration.json", which should
 look like this:
 
+```javascript
 {
   "first_level_backup_directory": "/mnt/first_level_backup_storage",
   "report_directory": "/mnt/webserver/www/htdocs/backup_reports",
@@ -64,6 +43,7 @@ look like this:
     "to": [ "admin@example.com" ]
   }
 }
+```
 
 As you might have noticed the files are in JSON format. You'll find information
 about the format itself on: https://en.wikipedia.org/wiki/JSON
@@ -80,8 +60,8 @@ time the backup actually runs. The report will be an HTML file.
 The Field "email" contains a configuration for email notifications. Each time
 the backup actually runs an email is sent to report success or failure.
 
-Hosts
------
+## Hosts
+
 After general configuration of SSH and the basic configuration, host
 configurations are the next important thing to create.
 
@@ -96,8 +76,8 @@ When you are done with all configuration steps for integrating the hosts, you
 should run the backup script in test mode. It will ensure that everything is
 working as expected so far.
 
-Storages
---------
+## Storages
+
 Having done the preparations and the basic configuration and having defined
 where the data comes from, it's time to write down where the backups will be
 stored.
@@ -109,8 +89,8 @@ In short, each storage configuration file represents a storage target
 e.g. a hard-disk or a tape. It also defines the backup strategy (like
 incremental or full copy) that is used to write data to it.
 
-Jobs
-----
+## Jobs
+
 Basic set-up is done. You have your hosts where the data is coming from. You
 have your storages where the backups are written to. Time to tie it all
 together.
@@ -120,8 +100,8 @@ that explains the content of job configuration files in detail.
 To sum it up a job simply says: "Write the backup from this host to this
 backup storage."
 
-Schedule
---------
+## Schedule
+
 Basic set-up is done. You have your data sources (hosts), your backup media
 (storages) and the glue in between (jobs). Now it's time for scheduling.
 There is a Cron configuration file you can apply to the "crontab" of your backup
@@ -136,5 +116,7 @@ created a job file "all_servers_to_mnt_backup_hdd1.json" you want to run
 at the end of every weekday (Mo-Fr). Then you create your symbolic link like
 this:
 
+```bash
 ln -s /opt/backup/jobs/all_servers_to_mnt_backup_hdd1.json \
  /opt/backup/schedule/end_of_every_weekday/all_servers_to_mnt_backup_hdd1.json
+```
