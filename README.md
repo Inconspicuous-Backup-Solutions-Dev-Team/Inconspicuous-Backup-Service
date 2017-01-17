@@ -1,26 +1,28 @@
 # Inconspicuous-Backup-Service
 
+![Inconspicuous Backup Service Introduction Figure](https://github.com/Inconspicuous-Backup-Solutions-Dev-Team/Inconspicuous-Backup-Service/raw/master/doc/figure_01_introduction.png)
+
 Inconspicuous Backup Service is a service meant to run on a dedicated backup server. It backs up data from other Linux and Unix-like servers via SSH. There is no need for installing a backup agent on those servers or doing any special configuration on these hosts, despite SSH access configuration.
 
 ## Overview
 
-To give you an idea about what to expect, here is a brief overview. There are no details provided. Those you will find in the separate "README.TXT" files within the configuration folders. Please go ahead and download the package to get detailed information.
+To give you an idea about what to expect, here is a brief overview. There are no details provided. Those you will find in the separate "README.md" files within the configuration folders. Please go ahead and download the package to get detailed information.
 
 ### Installation overview
 
 The installation and initial configuration on the backup server itself is quite some work. Additionally the backup server needs good hardening and shouldn't do anything but backup, because its root user also has root access to all other servers/hosts. Therefore you might want to get your hands on a preconfigured backup appliance. If you do the job yourself, you work your way through the following steps:
 * Download the package and extract it to "/opt/inconspicuous_backup_service" 
-* Follow the instructions in "/opt/inconspicuous_backup_service/README.TXT".
+* Follow the instructions in "/opt/inconspicuous_backup_service/conf/README.md".
  * Create/mount a First Level Backup Directory, where all data from all hosts gets cloned to. 
  * Create/mount a directory, where reports get stored to. Ideally this directory is on an internal web server. 
  * Extend the configuration of the Cron daemon using the provided Cron configuration file.
- * Edit the basic configuration file "/opt/inconspicuous_backup_service/configuration.json". 
- * Create a small configuration file for each host within "/opt/inconspicuous_backup_service/hosts/". 
+ * Edit the basic configuration file "/opt/inconspicuous_backup_service/conf/configuration.json". 
+ * Create a small configuration file for each host within "/opt/inconspicuous_backup_service/conf/hosts/". 
  * Establish a public private key authenticated SSH connection to each host. 
  * Test your configuration. (If you combine Inconspicuous Backup Service with another backup solution, at this point you are done.) 
- * Create a small configuration file for each backup storage within "/opt/inconspicuous_backup_service/storages/". 
- * Create a very small configuration file for each backup job within "/opt/inconspicuous_backup_service/jobs/". 
- * Create symbolic links to the job files within the subdirectories of "/opt/inconspicuous_backup_service/schedule/". 
+ * Create a small configuration file for each backup storage within "/opt/inconspicuous_backup_service/conf/storages/". 
+ * Create a very small configuration file for each backup job within "/opt/inconspicuous_backup_service/conf/jobs/". 
+ * Create symbolic links to the job files within the subdirectories of "/opt/inconspicuous_backup_service/conf/schedule/". 
  * Test your configuration.
  
 ### Concept and feature overview
