@@ -1,0 +1,40 @@
+html, body {
+    font-family: sans;
+}
+
+div.PageAlignment {
+    width: 820px;
+    margin: 0px auto;
+}
+
+div.Page {
+    min-width: 320px;
+    max-width: 820px;
+    box-shadow: 3px 3px 8px black;
+}
+
+div.PageContent {
+    padding: 5%;
+    width: 90%;
+}
+
+div.License {
+    font-family: monospace;
+    color: gray;
+}
+
+a.License {
+    color: gray;
+}
+
+p {
+    text-align: justify;
+    -ms-hyphens: auto;
+    -webkit-hyphens: auto;
+    hyphens: auto;
+}
+
+div.File {
+    background-color: #DEDEDE;
+    width:100%;
+}
