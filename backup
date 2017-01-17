@@ -1,0 +1,777 @@
+#!/usr/bin/env python3
+# ----------------------------------------------------------------------------------------------------------------------
+# Inconspicuous Backup Service
+#
+# Copyright 2016 by Inconspicuous Backup Solutions Dev. Team, Christian Beuschel <chris109@web.de>
+#
+# This file is part of Inconspicuous Backup Service.
+#
+# Inconspicuous Backup Service is free software: you can redistribute it and/or modify it under the terms of the
+# GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Inconspicuous Backup Service is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+# for more details.
+# 
+# You should have received a copy of the GNU General Public License along with Inconspicuous Backup Service. If not,
+# see <http://www.gnu.org/licenses/>.
+# 
+# ----------------------------------------------------------------------------------------------------------------------
+
+# Imports
+
+import sys
+import os
+import json
+import glob
+import subprocess
+import datetime
+import ctypes
+import platform
+from InconspicuousBackupServiceLib.Report import Report
+from InconspicuousBackupServiceLib import ConfigEditor
+
+
+
+def get_free_space_mb(dirname):
+    """Return folder/drive free space (in megabytes)."""
+    if platform.system() == 'Windows':
+        free_bytes = ctypes.c_ulonglong(0)
+        ctypes.windll.kernel32.GetDiskFreeSpaceExW(ctypes.c_wchar_p(dirname), None, None, ctypes.pointer(free_bytes))
+        return free_bytes.value / 1024 / 1024
+    else:
+        st = os.statvfs(dirname)
+        return st.f_bavail * st.f_frsize / 1024 / 1024
+
+# ------------------------------------------------------------------------------
+# Functions
+
+
+def quit_with_error(message):
+    print("\nError: {0}\n".format(message))
+    sys.exit(1)
+
+
+def quit_due_to_wrong_args():
+    print("\nUsage: {0} {1}|{2} [JOB_FOLDER]".format(
+          sys.argv[0],
+          BackupApplication.OPERATION_MODE_TEST,
+          BackupApplication.OPERATION_MODE_BACKUP))
+    print("\nExample: {0} {1} {2}".format(
+          sys.argv[0],
+          BackupApplication.OPERATION_MODE_BACKUP,
+          "schedule/end_of_every_saturday"))
+    sys.exit(1)
+
+
+def get_free_space(direcotory_path):
+    """Return folder/drive free space (in megabytes)."""
+    if platform.system() == 'Windows':
+        free_bytes = ctypes.c_ulonglong(0)
+        ctypes.windll.kernel32.GetDiskFreeSpaceExW(ctypes.c_wchar_p(direcotory_path),
+                                                   None,
+                                                   None,
+                                                   ctypes.pointer(free_bytes))
+        return free_bytes.value
+    else:
+        file_system_statistics = os.statvfs(direcotory_path)
+        return file_system_statistics.f_bavail * file_system_statistics.f_frsize
+
+
+def get_size_of_file_system_sub_tree(start_path='.'):
+    total_size = 0
+    for directory_path, directory_names, file_names in os.walk(start_path):
+        for file_name in file_names:
+            file_path = os.path.join(directory_path, file_name)
+            total_size += os.path.getsize(file_path)
+    return total_size
+
+
+def main():
+    application_folder = os.path.dirname(os.path.realpath(__file__))
+    configuration_folder = os.path.join(application_folder, ConfigEditor.CONFIGURATION_FOLDER_NAME)
+
+    operation_mode = None
+    if len(sys.argv) < 2:
+        quit_due_to_wrong_args()
+    if sys.argv[1] == BackupApplication.OPERATION_MODE_TEST:
+        operation_mode = BackupApplication.OPERATION_MODE_TEST
+    elif sys.argv[1] == BackupApplication.OPERATION_MODE_BACKUP:
+        operation_mode = BackupApplication.OPERATION_MODE_BACKUP
+    else:
+        print("Error: Unknown operation mode \"{0}\".".format(operation_mode))
+        quit_due_to_wrong_args()
+
+    job_folder = None
+    if len(sys.argv) == 3:
+        job_folder = sys.argv[2]
+        job_path = os.path.join(configuration_folder, job_folder)
+        if not os.path.isdir(job_path):
+            print("Error: Job directory \"{0}\" is not a directory.".format(job_path))
+            quit_due_to_wrong_args()
+
+    # Setup and run application
+
+    app = BackupApplication(application_folder, configuration_folder, operation_mode, job_folder)
+    app.run()
+    sys.exit(0)
+
+# ------------------------------------------------------------------------------
+# Application class
+
+
+class BackupApplication:
+    HOST_FILE_TRANSFER_TIMEOUT = 3600
+
+    CONFIGURATION_FILE_NAME_PATTERN = "*.json"
+    CONFIGURATION_FILE_NAME_EXTENSION = ".json"
+
+    OPERATION_MODE_TEST = "test"
+    OPERATION_MODE_BACKUP = "backup"
+
+    def __init__(self, application_folder, configuration_folder, operation_mode, job_folder=None):
+        self._application_folder = application_folder
+        self._configuration_folder = configuration_folder
+        self._operation_mode = operation_mode
+        self._job_folder = job_folder
+        self._services_export_folder = "/tmp/inconspicuous_backup_service"
+        self._global_configuration = None
+        self._host_list = []
+        self._host_file_list = []
+        self._storage_list = []
+        self._storage_file_list = []
+        self._job_list = []
+        self._job_file_list = []
+        self._backup_run_start_time = datetime.datetime.now()
+        self._backup_run_identifier = self._backup_run_start_time.strftime("%Y-%m-%d-%a-%H-%M-%S")
+        self._report = Report()
+
+    def configure_report(self):
+        directory = self._global_configuration[ConfigEditor.CONF_KEY_REPORT_DIRECTORY]
+        title_time_string = self._backup_run_start_time.strftime("%Y-%m-%d %a. %H:%M:%S")
+        title = "Inconspicuous Backup Service Report\n{0}".format(title_time_string)
+        filename = "backup_report_{0}.html".format(self._backup_run_start_time.strftime("%Y-%m-%d-%a-%H-%M-%S"))
+        email_configuration = self._global_configuration[ConfigEditor.CONF_KEY_EMAIL]
+        self._report.configure(directory, title, filename, email_configuration)
+
+    def read_global_configuration_file(self):
+        file_path = os.path.join(self._configuration_folder, ConfigEditor.GLOBAL_CONFIGURATION_FILE_NAME)
+        self._report.log(Report.LOG_LEVEL_INFO, "Reading global configuration file \"{0}\" ".format(file_path))
+        try:
+            with open(file_path, 'r') as f:
+                json_string = f.read()
+                self._global_configuration = json.loads(json_string)
+        except EnvironmentError:
+            message = "Could not read global configuration file \"{0}\" ".format(file_path)
+            self._report.log(Report.LOG_LEVEL_ERROR, message)
+            quit_with_error(message)
+        except json.JSONDecodeError:
+            message = "Could not parse global configuration file \"{0}\" ".format(file_path)
+            self._report.log(Report.LOG_LEVEL_ERROR, message)
+            quit_with_error(message)
+
+    def require_key_in_dictionary(self, key, dictionary, location):
+        if key not in dictionary:
+            message = "Option {0} not found in {1}".format(key, location)
+            self._report.log(Report.LOG_LEVEL_ERROR, message)
+            quit_with_error(message)
+
+    def check_for_key_in_dict(self, key, dictionary, location):
+        if key not in dictionary:
+            self._report.log(Report.LOG_LEVEL_ERROR, "Option {0} not found in {1}".format(key, location))
+            return False
+        else:
+            return True
+
+    @staticmethod
+    def test_is_dir_with_full_access(path):
+        if not os.path.isdir(path):
+            return "The directory \"{0}\" does not exist.".format(path)
+        elif not os.access(path, os.R_OK):
+            return "You don't have read access to \"{0}\"".format(path)
+        elif not os.access(path, os.X_OK):
+            return "You don't have access to the content of \"{0}\"".format(path)
+        elif not os.access(path, os.W_OK):
+            return "You don't have write access to \"{0}\"".format(path)
+        else:
+            return None
+
+    def test_global_configuration(self):
+        self._report.log(Report.LOG_LEVEL_INFO, "Testing global configuration.".format(self._backup_run_identifier))
+        self.require_key_in_dictionary(ConfigEditor.CONF_KEY_FIRST_LEVEL_BACKUP_DIRECTORY,
+                                       self._global_configuration,
+                                       ConfigEditor.GLOBAL_CONFIGURATION_FILE_NAME)
+        self.require_key_in_dictionary(ConfigEditor.CONF_KEY_REPORT_DIRECTORY,
+                                       self._global_configuration,
+                                       ConfigEditor.GLOBAL_CONFIGURATION_FILE_NAME)
+        self.require_key_in_dictionary(ConfigEditor.CONF_KEY_EMAIL,
+                                       self._global_configuration,
+                                       ConfigEditor.GLOBAL_CONFIGURATION_FILE_NAME)
+        folder_path = self._global_configuration[ConfigEditor.CONF_KEY_FIRST_LEVEL_BACKUP_DIRECTORY]
+        error_message = self.test_is_dir_with_full_access(folder_path)
+        if error_message is not None:
+            self._report.log(Report.LOG_LEVEL_ERROR, error_message)
+            quit_with_error(error_message)
+        folder_path = self._global_configuration[ConfigEditor.CONF_KEY_REPORT_DIRECTORY]
+        error_message = self.test_is_dir_with_full_access(folder_path)
+        if error_message is not None:
+            self._report.log(Report.LOG_LEVEL_ERROR, error_message)
+            quit_with_error(error_message)
+        dictionary = self._global_configuration[ConfigEditor.CONF_KEY_EMAIL]
+        location = "email configuration in {0}".format(ConfigEditor.GLOBAL_CONFIGURATION_FILE_NAME)
+        self.check_for_key_in_dict(ConfigEditor.CONF_KEY_SERVER, dictionary, location)
+        self.check_for_key_in_dict(ConfigEditor.CONF_KEY_USERNAME, dictionary, location)
+        self.check_for_key_in_dict(ConfigEditor.CONF_KEY_PASSWORD, dictionary, location)
+        self.check_for_key_in_dict(ConfigEditor.CONF_KEY_FROM, dictionary, location)
+        self.check_for_key_in_dict(ConfigEditor.CONF_KEY_TO, dictionary, location)
+
+    def read_json_files(self, folder_path):
+        file_contents_list = []
+        file_name_list = []
+        pattern = os.path.join(folder_path, self.CONFIGURATION_FILE_NAME_PATTERN)
+        path_list = glob.glob(pattern)
+        if len(path_list) == 0:
+            self._report.log(Report.LOG_LEVEL_WARN, "There are .json files in \"{0}\".".format(folder_path))
+        for file_path in path_list:
+            try:
+                with open(file_path, 'r') as f:
+                    json_string = f.read()
+                    content = json.loads(json_string)
+                    file_contents_list.append(content)
+                    file_name_list.append(os.path.basename(file_path))
+            except EnvironmentError:
+                message = "Could not read file \"{0}\" ".format(file_path)
+                self._report.log(Report.LOG_LEVEL_ERROR, message)
+            except json.JSONDecodeError:
+                message = "Could not parse file \"{0}\" ".format(file_path)
+                self._report.log(Report.LOG_LEVEL_ERROR, message)
+            else:
+                message = "Reading of \"{0}\" is done.".format(file_path)
+                self._report.log(Report.LOG_LEVEL_INFO, message)
+        return file_contents_list, file_name_list
+
+    def read_host_configuration_files(self):
+        folder_path = os.path.join(self._configuration_folder, ConfigEditor.HOSTS_CONFIGURATION_FOLDER_NAME)
+        self._report.log(Report.LOG_LEVEL_INFO,
+                         "Reading host configuration files in \"{0}\".".format(folder_path))
+        self._host_list, self._host_file_list = self.read_json_files(folder_path)
+
+    def read_storage_configuration_files(self):
+        folder_path = os.path.join(self._configuration_folder, ConfigEditor.STORAGES_CONFIGURATION_FOLDER_NAME)
+        self._report.log(Report.LOG_LEVEL_INFO,
+                         "Reading storage configuration files in \"{0}\".".format(folder_path))
+        self._storage_list, self._storage_file_list = self.read_json_files(folder_path)
+
+    def read_job_configuration_files(self):
+        if self._job_folder is not None:
+            folder_path = os.path.join(self._configuration_folder, self._job_folder)
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Reading job configuration files in \"{0}\".".format(folder_path))
+            self._job_list, self._job_file_list = self.read_json_files(folder_path)
+        else:
+            self._report.log(Report.LOG_LEVEL_WARN, "No job folder defined.")
+
+    def test_host_configuration_files(self):
+        self._report.log(Report.LOG_LEVEL_INFO, "Testing host configurations.")
+        remove_list = []
+        for index in range(0, len(self._host_list), 1):
+            host_config = self._host_list[index]
+            host_filename = self._host_file_list[index]
+            host_config_is_ok = True
+            host_config_is_ok = host_config_is_ok if self.check_for_key_in_dict(ConfigEditor.CONF_KEY_HOST,
+                                                                                host_config,
+                                                                                host_filename) else False
+            host_config_is_ok = host_config_is_ok if self.check_for_key_in_dict(ConfigEditor.CONF_KEY_SERVICES,
+                                                                                host_config,
+                                                                                host_filename) else False
+            host_config_is_ok = host_config_is_ok if self.check_for_key_in_dict(ConfigEditor.CONF_KEY_DIRECTORIES,
+                                                                                host_config,
+                                                                                host_filename) else False
+            if host_config_is_ok is False:
+                self._report.log(Report.LOG_LEVEL_ERROR,
+                                 "Host configuration \"{0}\" contains errors.".format(host_filename) +
+                                 " It will be ignored!")
+                remove_list.append(index)
+            else:
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                 "Host configuration \"{0}\" seams to be valid.".format(host_filename))
+        if len(remove_list) > 0:
+            remove_list.reverse()
+            for index in remove_list:
+                del self._host_list[index]
+                del self._host_file_list[index]
+
+    def test_storage_configuration_files(self):
+        self._report.log(Report.LOG_LEVEL_INFO, "Testing storage configurations.")
+        remove_list = []
+        for index in range(0, len(self._storage_list), 1):
+            storage_config = self._storage_list[index]
+            storage_filename = self._storage_file_list[index]
+            storage_config_is_ok = True
+            storage_config_is_ok = storage_config_is_ok if self.check_for_key_in_dict(ConfigEditor.CONF_KEY_TYPE,
+                                                                                      storage_config,
+                                                                                      storage_filename) else False
+            storage_config_is_ok = storage_config_is_ok if self.check_for_key_in_dict(ConfigEditor.CONF_KEY_STRATEGY,
+                                                                                      storage_config,
+                                                                                      storage_filename) else False
+            storage_config_is_ok = storage_config_is_ok if self.check_for_key_in_dict(ConfigEditor.CONF_KEY_REQUIRED_CAPACITY,
+                                                                                      storage_config,
+                                                                                      storage_filename) else False
+            if not storage_config_is_ok:
+                self._report.log(Report.LOG_LEVEL_ERROR,
+                                 "Storage configuration file \"{0}\" contains errors.".format(storage_filename) +
+                                 " It will be ignored!")
+            else:
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                 "Storage configuration \"{0}\" seams to be valid.".format(storage_filename))
+                remove_list.append(index)
+        if len(remove_list) > 0:
+            remove_list.reverse()
+            for index in remove_list:
+                del self._storage_list[index]
+                del self._storage_file_list[index]
+
+    def test_job_configuration_files(self):
+        self._report.log(Report.LOG_LEVEL_INFO, "Testing job configurations.")
+        remove_list = []
+        for index in range(0, len(self._job_list), 1):
+            job_config = self._job_list[index]
+            job_filename = self._job_file_list[index]
+            job_config_is_ok = True
+            job_config_is_ok = job_config_is_ok if self.check_for_key_in_dict(ConfigEditor.CONF_KEY_DESCRIPTION,
+                                                                              job_config_is_ok,
+                                                                              job_filename) else False
+            job_config_is_ok = job_config_is_ok if self.check_for_key_in_dict(ConfigEditor.CONF_KEY_HOST,
+                                                                              job_config_is_ok,
+                                                                              job_filename) else False
+            job_config_is_ok = job_config_is_ok if self.check_for_key_in_dict(ConfigEditor.CONF_KEY_STORAGE,
+                                                                              job_config_is_ok,
+                                                                              job_filename) else False
+            if job_config_is_ok:
+                storage_file_name = job_config[ConfigEditor.CONF_KEY_STORAGE] + self.CONFIGURATION_FILE_NAME_EXTENSION
+                if storage_file_name not in self._storage_file_list:
+                    job_config_is_ok = False
+                    self._report.log(Report.LOG_LEVEL_ERROR,
+                                     "Job configuration file \"{0}\" contains " +
+                                     "invalid storage reference.".format(job_filename))
+                host_string = job_config[ConfigEditor.CONF_KEY_HOST]
+                host_file_name = host_string + self.CONFIGURATION_FILE_NAME_EXTENSION
+                if host_file_name not in self._host_file_list:
+                    job_config_is_ok = False
+                    self._report.log(Report.LOG_LEVEL_ERROR,
+                                     "Job configuration file " +
+                                     "\"{0}\" contains invalid host reference \"{1}\".".format(job_filename,
+                                                                                               host_string))
+
+            if not job_config_is_ok:
+                self._report.log(Report.LOG_LEVEL_ERROR,
+                                 "Job configuration file \"{0}\" contains errors.".format(job_filename) +
+                                 " It will be ignored!")
+            else:
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                 "Job configuration \"{0}\" seams to be valid.".format(job_filename))
+                remove_list.append(index)
+        if len(remove_list) > 0:
+            remove_list.reverse()
+            for index in remove_list:
+                del self._job_list[index]
+                del self._job_file_list[index]
+
+    def test_hosts_access(self):
+        self._report.log(Report.LOG_LEVEL_INFO, "Testing if hosts are accessible.")
+        for index in range(0, len(self._host_list), 1):
+            host_config = self._host_list[index]
+            host_filename = self._host_file_list[index]
+            # Test ssh connectivity
+            hostname = host_config[ConfigEditor.CONF_KEY_HOST]
+            self._report.set_host_summary(host_filename, hostname)
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Testing connection to host \"{0}\" via ssh is working.".format(hostname))
+            try:
+                command = ["ssh",
+                           "-o", "BatchMode=yes",
+                           "-o", "PasswordAuthentication=no",
+                           "-o", "PreferredAuthentications=publickey",
+                           "-q",
+                           "{0}@{1}".format("root", hostname), "exit"]
+                subprocess.run(args=command,
+                               check=True,
+                               timeout=5)
+            except subprocess.TimeoutExpired:
+                self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+                self._report.log(Report.LOG_LEVEL_ERROR,
+                                 "Connection to host \"{0}\" via ssh is not working (timeout).".format(hostname))
+                continue
+            except subprocess.CalledProcessError:
+                self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+                self._report.log(Report.LOG_LEVEL_ERROR,
+                                 "Connection to host \"{0}\" via ssh is not working.".format(hostname))
+                continue
+            else:
+                self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_SUCCESS)
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                 "Connection to host \"{0}\" via ssh is working.".format(hostname))
+            # Test paths on host
+            self._report.log(Report.LOG_LEVEL_INFO, "Testing paths on host \"{0}\".".format(hostname))
+            path_list = host_config[ConfigEditor.CONF_KEY_DIRECTORIES]
+            if len(path_list) == 0:
+                self._report.log(Report.LOG_LEVEL_WARN, "No paths defined for host \"{0}\".".format(hostname))
+            for path in path_list:
+                try:
+                    command = ["ssh",
+                               "-o", "BatchMode=yes",
+                               "-o", "PasswordAuthentication=no",
+                               "-o", "PreferredAuthentications=publickey",
+                               "-q",
+                               "{0}@{1}".format("root", hostname),
+                               "[[", "-d", path, "]]", "&&", "echo", "\"TRUE\"", "||", "echo", "\"FALSE\""]
+                    output = subprocess.check_output(args=command, timeout=5).decode("utf-8").strip()
+                    if output != "TRUE":
+                        self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+                        self._report.log(Report.LOG_LEVEL_ERROR,
+                                         "Directory \"{0}\" on host \"{1}\", does not exist.".format(path, hostname))
+                except subprocess.TimeoutExpired:
+                    self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+                    self._report.log(Report.LOG_LEVEL_ERROR,
+                                     "Connection to host \"{0}\" via ssh is not working (timeout)".format(hostname))
+                except subprocess.CalledProcessError:
+                    self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+                    self._report.log(Report.LOG_LEVEL_ERROR,
+                                     "Connection to host \"{0}\" via ssh, is not working.".format(hostname))
+                else:
+                    self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_SUCCESS)
+                    self._report.log(Report.LOG_LEVEL_INFO,
+                                     "Directory {0} on host \"{1}\" seems to be fine.".format(path, hostname))
+
+    def get_storage_config_for_name(self, storage_name):
+        file_name = storage_name + self.CONFIGURATION_FILE_NAME_EXTENSION
+        index = self._storage_file_list.index(file_name)
+        storage_config = self._storage_list[index]
+        return storage_config
+
+    def create_service_export_folder_on_host(self, hostname, host_filename):
+        mkdir_command = ["ssh",
+                         "-o", "BatchMode=yes",
+                         "-o", "PasswordAuthentication=no",
+                         "-o", "PreferredAuthentications=publickey",
+                         "-q",
+                         "{0}@{1}".format("root", hostname),
+                         "mkdir", "-p", self._services_export_folder]
+        chmod_command = ["ssh",
+                         "-o", "BatchMode=yes",
+                         "-o", "PasswordAuthentication=no",
+                         "-o", "PreferredAuthentications=publickey",
+                         "-q",
+                         "{0}@{1}".format("root", hostname),
+                         "chmod", "700", self._services_export_folder]
+        try:
+            subprocess.run(args=mkdir_command, timeout=5)
+            subprocess.run(args=chmod_command, timeout=5)
+        except subprocess.TimeoutExpired:
+            self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+            self._report.log(Report.LOG_LEVEL_ERROR,
+                             ("Could not create directory \"{0}\""
+                              " on host \"{1}\" (timeout).").format(self._services_export_folder, hostname))
+        except subprocess.CalledProcessError:
+            self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+            self._report.log(Report.LOG_LEVEL_ERROR,
+                             ("Could not create directory \"{0}\""
+                              " on host \"{1}\".").format(self._services_export_folder, hostname))
+        else:
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             ("Created directory \"{0}\""
+                              " on host \"{1}\".").format(self._services_export_folder, hostname))
+            return True
+        return False
+
+    def export_mysql_on_host(self, service_info, hostname, host_filename):
+        filename = "{0}_export.sql".format(ConfigEditor.SERVICE_TYPE_MYSQL)
+        export_path = os.path.join(self._services_export_folder, filename)
+        try:
+            username = service_info[ConfigEditor.CONF_KEY_USERNAME]
+            password = service_info[ConfigEditor.CONF_KEY_PASSWORD]
+        except KeyError:
+            self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+            self._report.log(Report.LOG_LEVEL_ERROR,
+                             ("Error in \"{0}\" service configuration"
+                              " of \"{1}\".").format(ConfigEditor.SERVICE_TYPE_MYSQL, host_filename))
+            return
+        command = ["ssh",
+                   "-o", "BatchMode=yes",
+                   "-o", "PasswordAuthentication=no",
+                   "-o", "PreferredAuthentications=publickey",
+                   "-q",
+                   "{0}@{1}".format("root", hostname),
+                   "mysqldump", "-u", username, "-p{0}".format(password), "--all-databases", ">", export_path]
+        try:
+            subprocess.run(args=command, timeout=1800)
+        except subprocess.TimeoutExpired:
+            self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+            self._report.log(Report.LOG_LEVEL_ERROR,
+                             ("Could not create export file \"{0}\""
+                              " on host \"{1}\".").format(filename, hostname))
+        except subprocess.CalledProcessError:
+            self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+            self._report.log(Report.LOG_LEVEL_ERROR,
+                             ("Could not create export file \"{0}\""
+                              " on host \"{1}\".").format(filename, hostname))
+        else:
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             ("Created export file \"{0}\""
+                              " on host \"{1}\".").format(filename, hostname))
+
+    def export_pgsql_on_host(self, service_info, hostname, host_filename):
+        self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+        self._report.log(Report.LOG_LEVEL_ERROR,
+                         "Service type \"{0}\" export ist not implemented.".format(ConfigEditor.SERVICE_TYPE_POSTGRESQL))
+
+    def run_backup(self):
+        # Clone files from all hosts
+        self._report.log(Report.LOG_LEVEL_INFO, "Beginning cloning files from hosts.")
+        basic_backup_folder = self._global_configuration[ConfigEditor.CONF_KEY_FIRST_LEVEL_BACKUP_DIRECTORY]
+        for host_index in range(0, len(self._host_list), 1):
+            host_config = self._host_list[host_index]
+            host_filename = self._host_file_list[host_index]
+            hostname = host_config[ConfigEditor.CONF_KEY_HOST]
+            host_backup_folder = os.path.splitext(host_filename)[0]
+            path_list = host_config[ConfigEditor.CONF_KEY_DIRECTORIES]
+            service_list = host_config[ConfigEditor.CONF_KEY_SERVICES]
+            self._report.set_host_summary(host_filename, hostname)
+            if len(service_list > 0):
+                path_list.insert(0, self._services_export_folder)
+            for service_type, service_info in service_list.items():
+                if service_type == ConfigEditor.SERVICE_TYPE_MYSQL:
+                    self.export_mysql_on_host(service_info, hostname, host_filename)
+                elif service_type == ConfigEditor.SERVICE_TYPE_POSTGRESQL:
+                    self.export_pgsql_on_host(service_info, hostname, host_filename)
+                else:
+                    self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+                    self._report.log(Report.LOG_LEVEL_INFO,
+                                     "Not supported service type \"{0}\" for host \"{1}\".".format(service_type,
+                                                                                                   host_filename))
+            for path in path_list:
+                source_uri = "{0}@{1}:{2}".format("root", hostname, path)
+                target_uri = os.path.join(basic_backup_folder, host_backup_folder, path.lstrip("/"))
+                command = ["rsync", "-avz", "--delete", "-e", "ssh", source_uri, target_uri]
+                if not os.path.exists(target_uri):
+                    os.makedirs(target_uri)
+                try:
+                    subprocess.check_output(args=command, timeout=self.HOST_FILE_TRANSFER_TIMEOUT).decode("utf-8")
+                except subprocess.CalledProcessError:
+                    self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+                    self._report.log(Report.LOG_LEVEL_ERROR,
+                                     "Directory \"{0}\" on host \"{1}\", does not exist.".format(path, hostname))
+                except subprocess.TimeoutExpired:
+                    self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+                    self._report.log(Report.LOG_LEVEL_ERROR,
+                                     "Backup of host \"{0}\" via ssh is not working (timeout).".format(hostname))
+                else:
+                    self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_SUCCESS)
+                    self._report.log(Report.LOG_LEVEL_INFO,
+                                     "Directory {0} on host \"{1}\" cloned without errors.".format(path, hostname))
+        self._report.log(Report.LOG_LEVEL_INFO, "Cloning files from hosts is done.")
+        # Run backup jobs
+        self._report.log(Report.LOG_LEVEL_INFO, "Beginning backup jobs.")
+        for host_index in range(0, len(self._job_list), 1):
+            job_config = self._job_list[host_index]
+            job_filename = self._job_file_list[host_index]
+            description = job_config[ConfigEditor.CONF_KEY_DESCRIPTION]
+            self._report.log(Report.LOG_LEVEL_INFO, "Running backup job \"{0}\": {1}".format(job_filename, description))
+            self._report.set_job_summary(job_filename, description)
+            host_identifier = job_config[ConfigEditor.CONF_KEY_HOST]
+            storage_name = job_config[ConfigEditor.CONF_KEY_STORAGE]
+            storage_config = self.get_storage_config_for_name(storage_name)
+            storage_type = storage_config[ConfigEditor.CONF_KEY_TYPE]
+            storage_strategy = storage_config[ConfigEditor.CONF_KEY_STRATEGY]
+            required_capacity = storage_config[ConfigEditor.CONF_KEY_REQUIRED_CAPACITY]
+            if storage_type == ConfigEditor.CONF_KEY_HDD:
+                hdd_conf = storage_config[ConfigEditor.CONF_KEY_HDD]
+                self.backup_to_hdd(job_filename, host_identifier, storage_strategy, required_capacity, hdd_conf)
+            else:
+                self._report.set_job_summary(job_filename, summary=Report.LOG_SUMMARY_FAIL)
+                self._report.log(Report.LOG_LEVEL_ERROR,
+                                 "Unknown type for storage \"{0}\".".format(storage_name))
+        self._report.log(Report.LOG_LEVEL_INFO, "Backup jobs done.")
+
+    def backup_to_hdd(self, job_id_string, host_identifier, storage_strategy, required_capacity, hdd_conf):
+        backup_storage_path = hdd_conf[ConfigEditor.CONF_KEY_DIRECTORY]
+        backup_mount_point = hdd_conf[ConfigEditor.CONF_KEY_MOUNTPOINT]
+        if not os.path.ismount(backup_mount_point):
+            self._report.log(Report.LOG_LEVEL_INFO, "Backup HDD is not mounted to \"{0}\"".format(backup_mount_point))
+            try:
+                subprocess.check_call(["mount", backup_mount_point])
+            except subprocess.CalledProcessError:
+                self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_FAIL)
+                self._report.log(Report.LOG_LEVEL_ERROR,
+                                 "Backup HDD could not be mounted to \"{0}\"".format(backup_mount_point))
+        if not os.path.ismount(backup_mount_point):
+            self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_FAIL)
+            self._report.log(Report.LOG_LEVEL_ERROR,
+                             "Backup HDD could not be mounted to \"{0}\"".format(backup_mount_point))
+            return
+        if storage_strategy == ConfigEditor.BACKUP_STRATEGY_TGZ_LINEAR_FULL:
+            self.backup_to_hdd_tgz_linear_full(job_id_string,
+                                               host_identifier,
+                                               backup_storage_path,
+                                               required_capacity)
+        elif storage_strategy == ConfigEditor.BACKUP_STRATEGY_TGZ_RINGBUFFER_FULL:
+            self.backup_to_hdd_tgz_ringbuffer_full(job_id_string,
+                                                   host_identifier,
+                                                   backup_storage_path,
+                                                   required_capacity)
+        else:
+            self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_FAIL)
+            self._report.log(Report.LOG_LEVEL_ERROR,
+                             "Unknown storage strategy \"{0}\" for backup to HDD \"{1}\"".format(backup_mount_point,
+                                                                                                 storage_strategy))
+            return
+
+    def backup_to_hdd_tgz_ringbuffer_full(self,
+                                          job_id_string,
+                                          host_identification_string,
+                                          backup_storage_path,
+                                          required_capacity):
+        basic_backup_folder = self._global_configuration[ConfigEditor.CONF_KEY_FIRST_LEVEL_BACKUP_DIRECTORY]
+        source_uri = os.path.join(basic_backup_folder, host_identification_string)
+        target_file_name = "{0}-{1}.tgz".format(self._backup_run_identifier, host_identification_string)
+        existing_backups_of_host = glob.glob(os.path.join(backup_storage_path,
+                                                          "*-{0}.tgz".format(host_identification_string))).sort()
+        if len(existing_backups_of_host) > required_capacity:
+            backup_to_delete = existing_backups_of_host[0]
+            self._report.log(Report.LOG_LEVEL_INFO, "Removing old backup file \"{0}\".".format(backup_to_delete))
+            # os.remove(backup_to_delete)
+        target_uri = os.path.join(backup_storage_path, target_file_name)
+        source_size = get_size_of_file_system_sub_tree(source_uri)
+        target_space = get_free_space(backup_storage_path)
+        if source_size >= target_space:
+            message = ("Remaining space in directory \"{0}\" might not be enough "
+                       "for \"{1}\".").format(backup_storage_path, target_file_name)
+            self._report.log(Report.LOG_LEVEL_WARN, message)
+        command = ["tar", "-czpf", target_uri, source_uri]
+        self._report.log(Report.LOG_LEVEL_INFO,
+                         "Beginning backup of \"{0}\" to \"{1}\".".format(source_uri, target_uri))
+        try:
+            subprocess.check_call(command)
+        except subprocess.CalledProcessError:
+            self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_FAIL)
+            self._report.log(Report.LOG_LEVEL_ERROR,
+                             "Backup of \"{0}\" to \"{1}\" failed.".format(source_uri, target_uri))
+        else:
+            self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_SUCCESS)
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Backup of \"{0}\" to \"{1}\" done.".format(source_uri, target_uri))
+
+    def backup_to_hdd_tgz_linear_full(self,
+                                      job_id_string,
+                                      host_identification_string,
+                                      backup_storage_path,
+                                      required_capacity):
+        basic_backup_folder = self._global_configuration[ConfigEditor.CONF_KEY_FIRST_LEVEL_BACKUP_DIRECTORY]
+        source_uri = os.path.join(basic_backup_folder, host_identification_string)
+        target_file_name = "{0}-{1}.tgz".format(self._backup_run_identifier, host_identification_string)
+        target_uri = os.path.join(backup_storage_path, target_file_name)
+        source_size = get_size_of_file_system_sub_tree(source_uri)
+        target_space = get_free_space(backup_storage_path)
+        existing_backups_of_host = glob.glob(os.path.join(backup_storage_path,
+                                                          "*-{0}.tgz".format(host_identification_string)))
+        if len(existing_backups_of_host) > required_capacity:
+            self._report.log(Report.LOG_LEVEL_WARN,
+                             ("Number of backups required to be stored on this storage "
+                              "has been reached for \"{0}\".").format(host_identification_string))
+        if source_size >= target_space:
+            self._report.log(Report.LOG_LEVEL_WARN,
+                             ("Remaining space in directory \"{0}\" might "
+                              "not be enough for \"{1}\".").format(backup_storage_path, target_file_name))
+        command = ["tar", "-czpf", target_uri, source_uri]
+        self._report.log(Report.LOG_LEVEL_INFO,
+                         "Beginning backup of \"{0}\" to \"{1}\".".format(source_uri, target_uri))
+        try:
+            subprocess.check_call(command)
+        except subprocess.CalledProcessError:
+            self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_FAIL)
+            self._report.log(Report.LOG_LEVEL_ERROR,
+                             "Backup of \"{0}\" to \"{1}\" failed.".format(source_uri, target_uri))
+        else:
+            self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_SUCCESS)
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Backup of \"{0}\" to \"{1}\" done.".format(source_uri, target_uri))
+
+    def backup_to_hdd_rsync_linear_incremental(self,
+                                               job_id_string,
+                                               host_identification_string,
+                                               backup_storage_path,
+                                               required_capacity):
+        basic_backup_folder = self._global_configuration[ConfigEditor.CONF_KEY_FIRST_LEVEL_BACKUP_DIRECTORY]
+        source_uri = os.path.join(basic_backup_folder, host_identification_string)
+        target_folder_name = "{0}-{1}".format(self._backup_run_identifier, host_identification_string)
+        target_uri = os.path.join(backup_storage_path, target_folder_name)
+        existing_backups_of_host = glob.glob(os.path.join(backup_storage_path,
+                                                          "*-{0}/".format(host_identification_string))).sort()
+        if len(existing_backups_of_host) > 0:
+            previous_backup_of_host = existing_backups_of_host[-1]
+            command = ["rsync", "-av", "--delete", "--link-dest={0}".format(previous_backup_of_host),
+                       source_uri,
+                       target_uri]
+
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Beginning backup of \"{0}\" to \"{1}\".".format(source_uri, target_uri))
+            try:
+                subprocess.check_call(command)
+            except subprocess.CalledProcessError:
+                self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_FAIL)
+                self._report.log(Report.LOG_LEVEL_ERROR,
+                                 "Backup of \"{0}\" to \"{1}\" failed.".format(source_uri, target_uri))
+            else:
+                self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_SUCCESS)
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                 "Backup of \"{0}\" to \"{1}\" done.".format(source_uri, target_uri))
+        else:
+            command = ["rsync", "-av", source_uri, target_uri]
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Beginning backup of \"{0}\" to \"{1}\".".format(source_uri, target_uri))
+            try:
+                subprocess.check_call(command)
+            except subprocess.CalledProcessError:
+                self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_FAIL)
+                self._report.log(Report.LOG_LEVEL_ERROR,
+                                 "Backup of \"{0}\" to \"{1}\" failed.".format(source_uri, target_uri))
+            else:
+                self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_SUCCESS)
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                 "Backup of \"{0}\" to \"{1}\" done.".format(source_uri, target_uri))
+
+    def backup_to_hdd_rsync_ringbuffer_incremental(self,
+                                                   job_id_string,
+                                                   host_id_string,
+                                                   backup_storage_path,
+                                                   required_capacity):
+        pass
+
+    def run(self):
+        if self._operation_mode == self.OPERATION_MODE_TEST:
+            self._report.log(Report.LOG_LEVEL_INFO, "Beginning test run \"{0}\" ".format(self._backup_run_identifier))
+        elif self._operation_mode == self.OPERATION_MODE_BACKUP:
+            self._report.log(Report.LOG_LEVEL_INFO, "Beginning backup run \"{0}\" ".format(self._backup_run_identifier))
+        self.read_global_configuration_file()
+        self.test_global_configuration()
+        self.configure_report()
+        self.read_host_configuration_files()
+        self.test_host_configuration_files()
+        self.read_storage_configuration_files()
+        self.test_storage_configuration_files()
+        self.read_job_configuration_files()
+        self.test_job_configuration_files()
+        if self._operation_mode == self.OPERATION_MODE_TEST:
+            self.test_hosts_access()
+        elif self._operation_mode == self.OPERATION_MODE_BACKUP:
+            self.run_backup()
+        self._report.log(Report.LOG_LEVEL_INFO, "Finishing run \"{0}\".".format(self._backup_run_identifier))
+        self._report.write_html_file()
+        self._report.send_mail()
+
+# ------------------------------------------------------------------------------
+# Global space
+
+if __name__ == "__main__":
+    main()
