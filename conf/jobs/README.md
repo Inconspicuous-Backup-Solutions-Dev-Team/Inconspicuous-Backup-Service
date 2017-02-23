@@ -23,7 +23,7 @@ The content of a file might look like this:
 ```javascript
 {
     "description" : "Full backup of all servers to hard-disk /mnt/hdd1",
-    "host" : "svn_example_com"
+    "host" : "svn_example_com",
     "storage" : "mnt_backup_hdd1"
 }
 ```
