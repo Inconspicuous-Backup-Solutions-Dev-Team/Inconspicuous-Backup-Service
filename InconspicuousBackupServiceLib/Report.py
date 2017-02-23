@@ -237,7 +237,7 @@ class Report:
         self._job_summary_log[job_id_string] = summary_entry
 
     def write_html_file(self):
-        file_path = os.path.join(self._directory, "{0}.html".format(self._file_name))
+        file_path = os.path.join(self._directory, self._file_name)
         with open(file_path, 'w') as f:
             f.write(html_format_document_header(self._title))
 
