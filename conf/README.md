@@ -117,6 +117,6 @@ at the end of every weekday (Mo-Fr). Then you create your symbolic link like
 this:
 
 ```bash
-ln -s /opt/backup/jobs/all_servers_to_mnt_backup_hdd1.json \
+ln -s /opt/inconspicuous_backup_service/conf/jobs/all_servers_to_mnt_backup_hdd1.json \
  /opt/backup/schedule/end_of_every_weekday/all_servers_to_mnt_backup_hdd1.json
 ```
