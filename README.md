@@ -13,17 +13,6 @@ To give you an idea about what to expect, here is a brief overview. There are no
 The installation and initial configuration on the backup server itself is quite some work. Additionally the backup server needs good hardening and shouldn't do anything but backup, because its root user also has root access to all other servers/hosts. Therefore you might want to get your hands on a preconfigured backup appliance. If you do the job yourself, you work your way through the following steps:
 * Download the package and extract it to "/opt/inconspicuous_backup_service" 
 * Follow the instructions in "/opt/inconspicuous_backup_service/conf/README.md".
- * Create/mount a First Level Backup Directory, where all data from all hosts gets cloned to. 
- * Create/mount a directory, where reports get stored to. Ideally this directory is on an internal web server. 
- * Extend the configuration of the Cron daemon using the provided Cron configuration file.
- * Edit the basic configuration file "/opt/inconspicuous_backup_service/conf/configuration.json". 
- * Create a small configuration file for each host within "/opt/inconspicuous_backup_service/conf/hosts/". 
- * Establish a public private key authenticated SSH connection to each host. 
- * Test your configuration. (If you combine Inconspicuous Backup Service with another backup solution, at this point you are done.) 
- * Create a small configuration file for each backup storage within "/opt/inconspicuous_backup_service/conf/storages/". 
- * Create a very small configuration file for each backup job within "/opt/inconspicuous_backup_service/conf/jobs/". 
- * Create symbolic links to the job files within the subdirectories of "/opt/inconspicuous_backup_service/conf/schedule/". 
- * Test your configuration.
  
 ### Concept and feature overview
 
