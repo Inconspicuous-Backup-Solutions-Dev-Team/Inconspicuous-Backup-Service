@@ -22,12 +22,9 @@ Enter:
 sudo sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
 ```
 This changes SSH daemon configuration to allow "root" to login via SSH using a password.
-Enter one of the following commands:
+Enter:
 ```bash
-sudo /etc/init.d/sshd restart
-```
-```bash
-sudo systemctl restart sshd
+service ssh restart
 ```
 First line is to restart SSH daemon on a system with System V Init.
 Second line should only work on systems using Systemd.
@@ -55,13 +52,9 @@ Enter:
 sudo sed -i 's/PermitRootLogin yes/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
 ```
 This changes SSH daemon configuration back to not allow "root" to login via SSH using a password.
-
-Enter one of the following commands:
+Enter:
 ```bash
-sudo /etc/init.d/sshd restart
-```
-```bash
-sudo systemctl restart sshd
+service ssh restart
 ```
 First line is to restart SSH daemon on a system with System V Init.
 Second line should only work on systems using Systemd.
