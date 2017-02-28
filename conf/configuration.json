@@ -1,0 +1,11 @@
+{
+  "first_level_backup_directory": "/mnt/first_level_backup_storage",
+  "report_directory": "/mnt/backup_reports",
+  "email": {
+    "server": "smtp.example.com:25",
+    "username": "backup",
+    "password": "YOURSECRETPASSWORD",
+    "from": "backup@example.com",
+    "to": [ "administrator@example.com" ]
+  }
+}
