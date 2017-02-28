@@ -1,0 +1,1 @@
+This directory should contain symbolic links to the job files in "conf/jobs". Each job that is linked here shall be executed every Monday, Tuesday, Wednesday, Thursday and Friday at the end of the day.
