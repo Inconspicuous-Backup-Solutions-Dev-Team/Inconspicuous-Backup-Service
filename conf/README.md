@@ -21,7 +21,10 @@ However, you have to enable the root user of the backup server to access all
 clients via SSH without using a password. How to use certificates instead of
 passwords for SSH is well documented. For example enter these words into your
 favourite internet search engine: "ssh passwordless login" or take a look at
-the provided file “HOWTO_INSTALL_SSH.md”.
+the provided file "HOWTO_INSTALL_SSH.md".
+
+While configuring SSH you have to make sure that "rsync" is installed on every
+server you want to backup.
 
 After granting the root of your backup server access to all other servers, you
 have to configure the backup software. (Keep in mind your backup server is very
