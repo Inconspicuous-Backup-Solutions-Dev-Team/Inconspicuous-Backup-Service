@@ -42,7 +42,7 @@ Replace <HOST> with the host name or IP address of the host you want to backup.
 With this command you install the key on your host which grants root access to your host
 to backup servers root user.
 
-## 4. Allow SSH access for "root" using only SSH key but not a password to login to your host.
+## 4. Allow SSH access for "root" using only SSH key to login to your host.
 
 Preconditions:
 * You are able to login as "root" to your host.
