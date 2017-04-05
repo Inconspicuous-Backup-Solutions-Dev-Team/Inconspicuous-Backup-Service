@@ -538,7 +538,7 @@ class BackupApplication:
             path_list = host_config[ConfigEditor.CONF_KEY_DIRECTORIES]
             service_list = host_config[ConfigEditor.CONF_KEY_SERVICES]
             self._report.set_host_summary(host_filename, hostname)
-            if len(service_list > 0):
+            if (type(service_list) == dict and len(service_list) > 0):
                 path_list.insert(0, self._services_export_folder)
             for service_type, service_info in service_list.items():
                 if service_type == ConfigEditor.SERVICE_TYPE_MYSQL:
