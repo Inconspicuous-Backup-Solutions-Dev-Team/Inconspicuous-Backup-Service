@@ -505,7 +505,7 @@ class BackupApplication:
                    "{0}@{1}".format("root", hostname),
                    "mysqldump", "-u", username, "-p{0}".format(password), "--all-databases", ">", export_path]
         try:
-            subprocess.run(args=command, timeout=1800)
+            subprocess.call(args=command, timeout=1800)
         except subprocess.TimeoutExpired:
             self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
             self._report.log(Report.LOG_LEVEL_ERROR,
