@@ -34,9 +34,9 @@ def html_format_document_header(title):
             '<head>\n'
             '    <meta charset="utf-8">\n'
             '    <title>{0}</title>\n'
-            '    <meta name="description" content="The HTML5 Herald">\n'
-            '    <meta name="author" content="SitePoint">\n'
-            '    <link rel="stylesheet" href="BackupReport-Stylesheet.css">\n'
+            '    <meta name="description" content="Backup Report">\n'
+            '    <meta name="author" content="Inconspicuous Backup Service">\n'
+            '    <link rel="stylesheet" href="backup-report-stylesheet.css">\n'
             '</head>\n'
             '<body>\n'
             '<div class="position">\n'
@@ -255,7 +255,6 @@ class Report:
             for log_entry in self._linear_log:
                 f.write(log_entry.get_html())
             f.write(html_format_section_linear_log_footer())
-
     def send_mail(self):
         pass
 

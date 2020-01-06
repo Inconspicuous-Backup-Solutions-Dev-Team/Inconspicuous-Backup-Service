@@ -84,7 +84,10 @@ def get_size_of_file_system_sub_tree(start_path='.'):
     for directory_path, directory_names, file_names in os.walk(start_path):
         for file_name in file_names:
             file_path = os.path.join(directory_path, file_name)
-            total_size += os.path.getsize(file_path)
+            try:
+                total_size += os.path.getsize(file_path)
+            except OSError:
+                pass
     return total_size
 
 
@@ -150,7 +153,7 @@ class BackupApplication:
     def configure_report(self):
         directory = self._global_configuration[ConfigEditor.CONF_KEY_REPORT_DIRECTORY]
         title_time_string = self._backup_run_start_time.strftime("%Y-%m-%d %a. %H:%M:%S")
-        title = "Inconspicuous Backup Service Report\n{0}".format(title_time_string)
+        title = "Backup Report\n{0}".format(title_time_string)
         filename = "backup_report_{0}.html".format(self._backup_run_start_time.strftime("%Y-%m-%d-%a-%H-%M-%S"))
         email_configuration = self._global_configuration[ConfigEditor.CONF_KEY_EMAIL]
         self._report.configure(directory, title, filename, email_configuration)
@@ -322,10 +325,10 @@ class BackupApplication:
                 self._report.log(Report.LOG_LEVEL_ERROR,
                                  "Storage configuration file \"{0}\" contains errors.".format(storage_filename) +
                                  " It will be ignored!")
+                remove_list.append(index)
             else:
                 self._report.log(Report.LOG_LEVEL_INFO,
                                  "Storage configuration \"{0}\" seams to be valid.".format(storage_filename))
-                remove_list.append(index)
         if len(remove_list) > 0:
             remove_list.reverse()
             for index in remove_list:
@@ -340,21 +343,23 @@ class BackupApplication:
             job_filename = self._job_file_list[index]
             job_config_is_ok = True
             job_config_is_ok = job_config_is_ok if self.check_for_key_in_dict(ConfigEditor.CONF_KEY_DESCRIPTION,
-                                                                              job_config_is_ok,
+                                                                              job_config,
                                                                               job_filename) else False
             job_config_is_ok = job_config_is_ok if self.check_for_key_in_dict(ConfigEditor.CONF_KEY_HOST,
-                                                                              job_config_is_ok,
+                                                                              job_config,
                                                                               job_filename) else False
             job_config_is_ok = job_config_is_ok if self.check_for_key_in_dict(ConfigEditor.CONF_KEY_STORAGE,
-                                                                              job_config_is_ok,
+                                                                              job_config,
                                                                               job_filename) else False
             if job_config_is_ok:
                 storage_file_name = job_config[ConfigEditor.CONF_KEY_STORAGE] + self.CONFIGURATION_FILE_NAME_EXTENSION
                 if storage_file_name not in self._storage_file_list:
                     job_config_is_ok = False
+                    print(storage_file_name)
+                    print(self._storage_file_list)
                     self._report.log(Report.LOG_LEVEL_ERROR,
-                                     "Job configuration file \"{0}\" contains " +
-                                     "invalid storage reference.".format(job_filename))
+                                     "Job configuration file \"{0}\" contains ".format(job_filename) +
+                                     "invalid storage reference.")
                 host_string = job_config[ConfigEditor.CONF_KEY_HOST]
                 host_file_name = host_string + self.CONFIGURATION_FILE_NAME_EXTENSION
                 if host_file_name not in self._host_file_list:
@@ -368,10 +373,10 @@ class BackupApplication:
                 self._report.log(Report.LOG_LEVEL_ERROR,
                                  "Job configuration file \"{0}\" contains errors.".format(job_filename) +
                                  " It will be ignored!")
+                remove_list.append(index)
             else:
                 self._report.log(Report.LOG_LEVEL_INFO,
                                  "Job configuration \"{0}\" seams to be valid.".format(job_filename))
-                remove_list.append(index)
         if len(remove_list) > 0:
             remove_list.reverse()
             for index in remove_list:
@@ -538,20 +543,21 @@ class BackupApplication:
             path_list = host_config[ConfigEditor.CONF_KEY_DIRECTORIES]
             service_list = host_config[ConfigEditor.CONF_KEY_SERVICES]
             self._report.set_host_summary(host_filename, hostname)
-            if (type(service_list) == dict and len(service_list) > 0):
+            if type(service_list) == dict and len(service_list) > 0:
+                self.create_service_export_folder_on_host(hostname, host_filename)
                 path_list.insert(0, self._services_export_folder)
-            for service_type, service_info in service_list.items():
-                if service_type == ConfigEditor.SERVICE_TYPE_MYSQL:
-                    self.export_mysql_on_host(service_info, hostname, host_filename)
-                elif service_type == ConfigEditor.SERVICE_TYPE_POSTGRESQL:
-                    self.export_pgsql_on_host(service_info, hostname, host_filename)
-                else:
-                    self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
-                    self._report.log(Report.LOG_LEVEL_INFO,
-                                     "Not supported service type \"{0}\" for host \"{1}\".".format(service_type,
-                                                                                                   host_filename))
+                for service_type, service_info in service_list.items():
+                    if service_type == ConfigEditor.SERVICE_TYPE_MYSQL:
+                        self.export_mysql_on_host(service_info, hostname, host_filename)
+                    elif service_type == ConfigEditor.SERVICE_TYPE_POSTGRESQL:
+                        self.export_pgsql_on_host(service_info, hostname, host_filename)
+                    else:
+                        self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+                        self._report.log(Report.LOG_LEVEL_INFO,
+                                         "Not supported service type \"{0}\" for host \"{1}\".".format(service_type,
+                                                                                                       host_filename))
             for path in path_list:
-                source_uri = "{0}@{1}:{2}".format("root", hostname, path)
+                source_uri = "{0}@{1}:{2}{3}".format("root", hostname, path, os.path.sep)
                 target_uri = os.path.join(basic_backup_folder, host_backup_folder, path.lstrip("/"))
                 command = ["rsync", "-avz", "--delete", "-e", "ssh", source_uri, target_uri]
                 if not os.path.exists(target_uri):
@@ -573,9 +579,9 @@ class BackupApplication:
         self._report.log(Report.LOG_LEVEL_INFO, "Cloning files from hosts is done.")
         # Run backup jobs
         self._report.log(Report.LOG_LEVEL_INFO, "Beginning backup jobs.")
-        for host_index in range(0, len(self._job_list), 1):
-            job_config = self._job_list[host_index]
-            job_filename = self._job_file_list[host_index]
+        for job_index in range(0, len(self._job_list), 1):
+            job_config = self._job_list[job_index]
+            job_filename = self._job_file_list[job_index]
             description = job_config[ConfigEditor.CONF_KEY_DESCRIPTION]
             self._report.log(Report.LOG_LEVEL_INFO, "Running backup job \"{0}\": {1}".format(job_filename, description))
             self._report.set_job_summary(job_filename, description)
@@ -636,11 +642,8 @@ class BackupApplication:
         source_uri = os.path.join(basic_backup_folder, host_identification_string)
         target_file_name = "{0}-{1}.tgz".format(self._backup_run_identifier, host_identification_string)
         existing_backups_of_host = glob.glob(os.path.join(backup_storage_path,
-                                                          "*-{0}.tgz".format(host_identification_string))).sort()
-        if len(existing_backups_of_host) > required_capacity:
-            backup_to_delete = existing_backups_of_host[0]
-            self._report.log(Report.LOG_LEVEL_INFO, "Removing old backup file \"{0}\".".format(backup_to_delete))
-            # os.remove(backup_to_delete)
+                                                          "*-{0}.tgz".format(host_identification_string)))
+        existing_backups_of_host.sort()
         target_uri = os.path.join(backup_storage_path, target_file_name)
         source_size = get_size_of_file_system_sub_tree(source_uri)
         target_space = get_free_space(backup_storage_path)
@@ -652,6 +655,7 @@ class BackupApplication:
         self._report.log(Report.LOG_LEVEL_INFO,
                          "Beginning backup of \"{0}\" to \"{1}\".".format(source_uri, target_uri))
         try:
+            #print(" ".join(command))
             subprocess.check_call(command)
         except subprocess.CalledProcessError:
             self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_FAIL)
@@ -661,6 +665,10 @@ class BackupApplication:
             self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_SUCCESS)
             self._report.log(Report.LOG_LEVEL_INFO,
                              "Backup of \"{0}\" to \"{1}\" done.".format(source_uri, target_uri))
+            if len(existing_backups_of_host) >= required_capacity:
+                backup_to_delete = existing_backups_of_host[0]
+                self._report.log(Report.LOG_LEVEL_INFO, "Removing old backup file \"{0}\".".format(backup_to_delete))
+                os.remove(backup_to_delete)
 
     def backup_to_hdd_tgz_linear_full(self,
                                       job_id_string,
@@ -707,7 +715,8 @@ class BackupApplication:
         target_folder_name = "{0}-{1}".format(self._backup_run_identifier, host_identification_string)
         target_uri = os.path.join(backup_storage_path, target_folder_name)
         existing_backups_of_host = glob.glob(os.path.join(backup_storage_path,
-                                                          "*-{0}/".format(host_identification_string))).sort()
+                                                          "*-{0}/".format(host_identification_string)))
+        existing_backups_of_host.sort()
         if len(existing_backups_of_host) > 0:
             previous_backup_of_host = existing_backups_of_host[-1]
             command = ["rsync", "-av", "--delete", "--link-dest={0}".format(previous_backup_of_host),
