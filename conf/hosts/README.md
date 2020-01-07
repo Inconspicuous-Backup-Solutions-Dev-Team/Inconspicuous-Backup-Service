@@ -38,9 +38,9 @@ The field "host" has a string value representing the network address of the
 host itself. If you can use this address to ssh into your host you are good
 to go.
 
-The field "services" contains a dictionry of services, that need special
+The field "services" contains a dictionary of services, that need special
 treatment for backing up their data. Mainly it would be databases. Currently
-supported services are: "mysql"
+supported services are: "mysql".
 
 The field "directories" contains a list of directory paths on the host. Each
 directory will be backed up recursively, not following symbolic links.

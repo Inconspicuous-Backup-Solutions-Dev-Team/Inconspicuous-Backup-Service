@@ -13,11 +13,18 @@ with an underscore "_". Here are some examples:
 For streaming devices the same pattern can be applied to the devices path:
 * /dev/nst0 => dev_nst0
 
+Supported storage types with corresponding strategies are:
+* "hdd" - Use a mounted, writable file system, usually a hard disk drive.
+  * "tgz-linear-full" - Create a .tar.gz archive with each backup.
+  * "tgz-ringbuffer-full" - Create a .tar.gz archive with each backup. Delete oldest backup, if there are more archives "required_capacity" defines. 
+  * "rsync-linear-incremental" - Create a directory with each backup. Copy changed files only. Create hardlinks to older backups for unchanged files. 
+  * "rsync-ringbuffer-incremental" - Create a directory with each backup. Copy changed files only. Create hardlinks to older backups for unchanged files. Delete oldest backup, if there are more archives "required_capacity" defines.
+
 The content of a file might look like this:
 ```javascript
 {
     "type" : "hdd",
-    "strategy" : "fullring",
+    "strategy" : "tgz-ringbuffer-full",
     "required_capacity" : 5,
     "hdd" : {
         "directory" : "/mnt/backup_hdd1" ,

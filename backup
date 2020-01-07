@@ -31,7 +31,7 @@ import ctypes
 import platform
 from InconspicuousBackupServiceLib.Report import Report
 from InconspicuousBackupServiceLib import ConfigEditor
-
+import shutil
 
 
 def get_free_space_mb(dirname):
@@ -400,6 +400,8 @@ class BackupApplication:
                            "-o", "PreferredAuthentications=publickey",
                            "-q",
                            "{0}@{1}".format("root", hostname), "exit"]
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                 "Executing command: {0}".format(" ".join(command)))
                 subprocess.run(args=command,
                                check=True,
                                timeout=5)
@@ -431,6 +433,8 @@ class BackupApplication:
                                "-q",
                                "{0}@{1}".format("root", hostname),
                                "[[", "-d", path, "]]", "&&", "echo", "\"TRUE\"", "||", "echo", "\"FALSE\""]
+                    self._report.log(Report.LOG_LEVEL_INFO,
+                                     "Executing command: {0}".format(" ".join(command)))
                     output = subprocess.check_output(args=command, timeout=5).decode("utf-8").strip()
                     if output != "TRUE":
                         self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
@@ -471,7 +475,11 @@ class BackupApplication:
                          "{0}@{1}".format("root", hostname),
                          "chmod", "700", self._services_export_folder]
         try:
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Executing command: {0}".format(" ".join(mkdir_command)))
             subprocess.run(args=mkdir_command, timeout=5)
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Executing command: {0}".format(" ".join(chmod_command)))
             subprocess.run(args=chmod_command, timeout=5)
         except subprocess.TimeoutExpired:
             self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
@@ -509,7 +517,10 @@ class BackupApplication:
                    "-q",
                    "{0}@{1}".format("root", hostname),
                    "mysqldump", "-u", username, "-p{0}".format(password), "--all-databases", ">", export_path]
+        reportable_command = [parameter.replace("-p{0}".format(password), "-p--------") for parameter in command]
         try:
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Executing command: {0}".format(" ".join(reportable_command)))
             subprocess.call(args=command, timeout=1800)
         except subprocess.TimeoutExpired:
             self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
@@ -558,11 +569,13 @@ class BackupApplication:
                                                                                                        host_filename))
             for path in path_list:
                 source_uri = "{0}@{1}:{2}{3}".format("root", hostname, path, os.path.sep)
-                target_uri = os.path.join(basic_backup_folder, host_backup_folder, path.lstrip("/"))
+                target_uri = os.path.join(basic_backup_folder, host_backup_folder, path.lstrip(os.path.sep))
                 command = ["rsync", "-avz", "--delete", "-e", "ssh", source_uri, target_uri]
                 if not os.path.exists(target_uri):
                     os.makedirs(target_uri)
                 try:
+                    self._report.log(Report.LOG_LEVEL_INFO,
+                                     "Executing command: {0}".format(" ".join(command)))
                     subprocess.check_output(args=command, timeout=self.HOST_FILE_TRANSFER_TIMEOUT).decode("utf-8")
                 except subprocess.CalledProcessError:
                     self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
@@ -606,6 +619,8 @@ class BackupApplication:
         if not os.path.ismount(backup_mount_point):
             self._report.log(Report.LOG_LEVEL_INFO, "Backup HDD is not mounted to \"{0}\"".format(backup_mount_point))
             try:
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                 "Executing command: {0}".format(" ".join(command)))
                 subprocess.check_call(["mount", backup_mount_point])
             except subprocess.CalledProcessError:
                 self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_FAIL)
@@ -626,6 +641,16 @@ class BackupApplication:
                                                    host_identifier,
                                                    backup_storage_path,
                                                    required_capacity)
+        elif storage_strategy == ConfigEditor.BACKUP_STRATEGY_RSYNC_LINEAR_INCREMENTAL:
+            self.backup_to_hdd_rsync_linear_incremental(job_id_string,
+                                                        host_identifier,
+                                                        backup_storage_path,
+                                                        required_capacity)
+        elif storage_strategy == ConfigEditor.BACKUP_STRATEGY_RSYNC_RINGBUFFER_INCREMENTAL:
+            self.backup_to_hdd_rsync_ringbuffer_incremental(job_id_string,
+                                                            host_identifier,
+                                                            backup_storage_path,
+                                                            required_capacity)
         else:
             self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_FAIL)
             self._report.log(Report.LOG_LEVEL_ERROR,
@@ -655,7 +680,8 @@ class BackupApplication:
         self._report.log(Report.LOG_LEVEL_INFO,
                          "Beginning backup of \"{0}\" to \"{1}\".".format(source_uri, target_uri))
         try:
-            #print(" ".join(command))
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Executing command: {0}".format(" ".join(command)))
             subprocess.check_call(command)
         except subprocess.CalledProcessError:
             self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_FAIL)
@@ -695,6 +721,8 @@ class BackupApplication:
         self._report.log(Report.LOG_LEVEL_INFO,
                          "Beginning backup of \"{0}\" to \"{1}\".".format(source_uri, target_uri))
         try:
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Executing command: {0}".format(" ".join(command)))
             subprocess.check_call(command)
         except subprocess.CalledProcessError:
             self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_FAIL)
@@ -711,7 +739,7 @@ class BackupApplication:
                                                backup_storage_path,
                                                required_capacity):
         basic_backup_folder = self._global_configuration[ConfigEditor.CONF_KEY_FIRST_LEVEL_BACKUP_DIRECTORY]
-        source_uri = os.path.join(basic_backup_folder, host_identification_string)
+        source_uri = os.path.join(basic_backup_folder, host_identification_string) + os.path.sep
         target_folder_name = "{0}-{1}".format(self._backup_run_identifier, host_identification_string)
         target_uri = os.path.join(backup_storage_path, target_folder_name)
         existing_backups_of_host = glob.glob(os.path.join(backup_storage_path,
@@ -726,6 +754,8 @@ class BackupApplication:
             self._report.log(Report.LOG_LEVEL_INFO,
                              "Beginning backup of \"{0}\" to \"{1}\".".format(source_uri, target_uri))
             try:
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                 "Executing command: {0}".format(" ".join(command)))
                 subprocess.check_call(command)
             except subprocess.CalledProcessError:
                 self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_FAIL)
@@ -740,6 +770,8 @@ class BackupApplication:
             self._report.log(Report.LOG_LEVEL_INFO,
                              "Beginning backup of \"{0}\" to \"{1}\".".format(source_uri, target_uri))
             try:
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                 "Executing command: {0}".format(" ".join(command)))
                 subprocess.check_call(command)
             except subprocess.CalledProcessError:
                 self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_FAIL)
@@ -752,10 +784,56 @@ class BackupApplication:
 
     def backup_to_hdd_rsync_ringbuffer_incremental(self,
                                                    job_id_string,
-                                                   host_id_string,
+                                                   host_identification_string,
                                                    backup_storage_path,
                                                    required_capacity):
-        pass
+        basic_backup_folder = self._global_configuration[ConfigEditor.CONF_KEY_FIRST_LEVEL_BACKUP_DIRECTORY]
+        source_uri = os.path.join(basic_backup_folder, host_identification_string) + os.path.sep
+        target_folder_name = "{0}-{1}".format(self._backup_run_identifier, host_identification_string)
+        target_uri = os.path.join(backup_storage_path, target_folder_name)
+        existing_backups_of_host = glob.glob(os.path.join(backup_storage_path,
+                                                          "*-{0}/".format(host_identification_string)))
+        existing_backups_of_host.sort()
+        if len(existing_backups_of_host) > 0:
+            previous_backup_of_host = existing_backups_of_host[-1]
+            command = ["rsync", "-av", "--delete", "--link-dest={0}".format(previous_backup_of_host),
+                       source_uri,
+                       target_uri]
+
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Beginning backup of \"{0}\" to \"{1}\".".format(source_uri, target_uri))
+            try:
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                 "Executing command: {0}".format(" ".join(command)))
+                subprocess.check_call(command)
+            except subprocess.CalledProcessError:
+                self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_FAIL)
+                self._report.log(Report.LOG_LEVEL_ERROR,
+                                 "Backup of \"{0}\" to \"{1}\" failed.".format(source_uri, target_uri))
+            else:
+                self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_SUCCESS)
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                 "Backup of \"{0}\" to \"{1}\" done.".format(source_uri, target_uri))
+        else:
+            command = ["rsync", "-av", source_uri, target_uri]
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Beginning backup of \"{0}\" to \"{1}\".".format(source_uri, target_uri))
+            try:
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                 "Executing command: {0}".format(" ".join(command)))
+                subprocess.check_call(command)
+            except subprocess.CalledProcessError:
+                self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_FAIL)
+                self._report.log(Report.LOG_LEVEL_ERROR,
+                                 "Backup of \"{0}\" to \"{1}\" failed.".format(source_uri, target_uri))
+            else:
+                self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_SUCCESS)
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                 "Backup of \"{0}\" to \"{1}\" done.".format(source_uri, target_uri))
+        if len(existing_backups_of_host) >= required_capacity:
+            backup_to_delete = existing_backups_of_host[0]
+            self._report.log(Report.LOG_LEVEL_INFO, "Removing old backup directory \"{0}\".".format(backup_to_delete))
+            shutil.rmtree(backup_to_delete)
 
     def run(self):
         if self._operation_mode == self.OPERATION_MODE_TEST:
