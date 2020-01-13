@@ -10,7 +10,7 @@ with an underscore "_". Here are some examples:
 * /media/usb_hdd/               => media_usb_hdd
 * /media/network/backup_on_nas1 => media_network_backup_on_nas1
 
-For streaming devices the same pattern can be applied to the devices path:
+For stream devices the same pattern can be applied to the devices path:
 * /dev/nst0 => dev_nst0
 
 Supported storage types with corresponding strategies are:
@@ -19,6 +19,11 @@ Supported storage types with corresponding strategies are:
   * "tgz-ringbuffer-full" - Create a .tar.gz archive with each backup. Delete oldest backup, if there are more archives "required_capacity" defines. 
   * "rsync-linear-incremental" - Create a directory with each backup. Copy changed files only. Create hardlinks to older backups for unchanged files. 
   * "rsync-ringbuffer-incremental" - Create a directory with each backup. Copy changed files only. Create hardlinks to older backups for unchanged files. Delete oldest backup, if there are more archives "required_capacity" defines.
+
+Each storage type has its own set of parameters:
+* "hdd"
+  * "directory" - The directory where backups will be stored.
+  * "mountpoint" - The directory where the drive is mounted to.
 
 The content of a file might look like this:
 ```javascript

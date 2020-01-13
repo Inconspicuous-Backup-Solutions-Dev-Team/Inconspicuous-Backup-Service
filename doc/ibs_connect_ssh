@@ -1,0 +1,44 @@
+#!/bin/bash
+if [ "$EUID" -ne 0 ]
+  then echo "Please run as root"
+  exit 1
+fi
+
+SSHCONFIG="/etc/ssh/sshd_config"
+HOST=$(ifconfig | sed -En 's/127.0.0.1//;s/.*inet (addr:)?(([0-9]*\.){3}[0-9]*).*/\2/p')
+PW=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 13 ; echo '')
+
+echo "Please make sure ..."
+echo "... you execute this script on the host you want to create backups of."
+echo "... you are logged as root to your backup server in a seperate terminal window."
+echo "... you already have created a ssh key for the root user of your backup server."
+echo "You can generate a ssh key with this command: ssh-keygen -t rsa -b 4096"
+echo " "
+read -p "Press [CTRL]+[C] to abort or [ENTER] to continue"
+echo " "
+echo " "
+echo "Set a temprary root password"
+echo "Use password: $PW"
+passwd
+echo " "
+echo " "
+echo "Enable root login via ssh"
+sed -i 's/#PermitRootLogin/PermitRootLogin/' $SSHCONFIG
+sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' $SSHCONFIG
+sed -i 's/PermitRootLogin without-password/PermitRootLogin yes/' $SSHCONFIG
+service ssh restart
+echo " "
+echo "Copy the ssh key of your backup servers root account now to this host."
+echo "Command:  ssh-copy-id -i ~/.ssh/id_rsa.pub root@$HOST"
+echo "Password: $PW"
+echo " "
+read -p "Press [ENTER] to continue"
+echo " "
+echo " "
+echo "Permit ssh root login only via ssh key"
+sed -i 's/PermitRootLogin yes/PermitRootLogin without-password/' $SSHCONFIG
+service ssh restart
+echo "Remove temporary password for root"
+passwd -dl root
+
+exit 0
