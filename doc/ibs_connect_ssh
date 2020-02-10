@@ -19,6 +19,7 @@ echo " "
 echo " "
 echo "Set a temprary root password"
 echo "Use password: $PW"
+# synouser --setpw root nsotTCvyCYGnf
 passwd
 echo " "
 echo " "
@@ -40,5 +41,4 @@ sed -i 's/PermitRootLogin yes/PermitRootLogin without-password/' $SSHCONFIG
 service ssh restart
 echo "Remove temporary password for root"
 passwd -dl root
-
 exit 0

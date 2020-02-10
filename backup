@@ -404,7 +404,7 @@ class BackupApplication:
                                  "Executing command: {0}".format(" ".join(command)))
                 subprocess.run(args=command,
                                check=True,
-                               timeout=5)
+                               timeout=10)
             except subprocess.TimeoutExpired:
                 self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
                 self._report.log(Report.LOG_LEVEL_ERROR,
@@ -435,7 +435,7 @@ class BackupApplication:
                                "[[", "-d", path, "]]", "&&", "echo", "\"TRUE\"", "||", "echo", "\"FALSE\""]
                     self._report.log(Report.LOG_LEVEL_INFO,
                                      "Executing command: {0}".format(" ".join(command)))
-                    output = subprocess.check_output(args=command, timeout=5).decode("utf-8").strip()
+                    output = subprocess.check_output(args=command, timeout=10).decode("utf-8").strip()
                     if output != "TRUE":
                         self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
                         self._report.log(Report.LOG_LEVEL_ERROR,
@@ -477,10 +477,10 @@ class BackupApplication:
         try:
             self._report.log(Report.LOG_LEVEL_INFO,
                              "Executing command: {0}".format(" ".join(mkdir_command)))
-            subprocess.run(args=mkdir_command, timeout=5)
+            subprocess.run(args=mkdir_command, timeout=10)
             self._report.log(Report.LOG_LEVEL_INFO,
                              "Executing command: {0}".format(" ".join(chmod_command)))
-            subprocess.run(args=chmod_command, timeout=5)
+            subprocess.run(args=chmod_command, timeout=10)
         except subprocess.TimeoutExpired:
             self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
             self._report.log(Report.LOG_LEVEL_ERROR,
