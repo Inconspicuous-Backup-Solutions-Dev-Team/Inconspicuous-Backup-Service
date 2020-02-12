@@ -54,6 +54,7 @@ CONF_KEY_DIRECTORY = "directory"
 CONF_KEY_MOUNTPOINT = "mountpoint"
 CONF_KEY_DESCRIPTION = "description"
 CONF_KEY_STORAGE = "storage"
+CONF_KEY_REPOSITORIES_DIRECTORY = "repositories_directory"
 
 BACKUP_STRATEGY_TGZ_LINEAR_FULL = "tgz-linear-full"
 BACKUP_STRATEGY_TGZ_RINGBUFFER_FULL = "tgz-ringbuffer-full"
@@ -61,8 +62,8 @@ BACKUP_STRATEGY_RSYNC_LINEAR_INCREMENTAL = "rsync-linear-incremental"
 BACKUP_STRATEGY_RSYNC_RINGBUFFER_INCREMENTAL = "rsync-ringbuffer-incremental"
 
 SERVICE_TYPE_MYSQL = "mysql"
-SERVICE_TYPE_POSTGRESQL = "pgsql"
-
+SERVICE_TYPE_POSTGRESQL = "postgresql"
+SERVICE_TYPE_SVN = "subversion"
 
 class ConfigurationObject:
 

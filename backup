@@ -538,9 +538,133 @@ class BackupApplication:
                               " on host \"{1}\".").format(filename, hostname))
 
     def export_pgsql_on_host(self, service_info, hostname, host_filename):
-        self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
-        self._report.log(Report.LOG_LEVEL_ERROR,
-                         "Service type \"{0}\" export ist not implemented.".format(ConfigEditor.SERVICE_TYPE_POSTGRESQL))
+        filename = "{0}_export.sql".format(ConfigEditor.SERVICE_TYPE_POSTGRESQL)
+        export_path = os.path.join(self._services_export_folder, filename)
+        try:
+            username = service_info[ConfigEditor.CONF_KEY_USERNAME]
+        except KeyError:
+            self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+            self._report.log(Report.LOG_LEVEL_ERROR,
+                             ("Error in \"{0}\" service configuration"
+                              " of \"{1}\".").format(ConfigEditor.SERVICE_TYPE_POSTGRESQL, host_filename))
+            return
+        pre_command = ["ssh",
+                   "-o", "BatchMode=yes",
+                   "-o", "PasswordAuthentication=no",
+                   "-o", "PreferredAuthentications=publickey",
+                   "-q",
+                   "{0}@{1}".format("root", hostname),
+                   "chown", username ,self._services_export_folder]
+        command = ["ssh",
+                   "-o", "BatchMode=yes",
+                   "-o", "PasswordAuthentication=no",
+                   "-o", "PreferredAuthentications=publickey",
+                   "-q",
+                   "{0}@{1}".format("root", hostname),
+                   "sudo", "-u", username, "pg_dumpall", ">",  export_path]
+        post_command = ["ssh",
+                   "-o", "BatchMode=yes",
+                   "-o", "PasswordAuthentication=no",
+                   "-o", "PreferredAuthentications=publickey",
+                   "-q",
+                   "{0}@{1}".format("root", hostname),
+                   "chown", "root" ,self._services_export_folder]
+        try:
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Executing command: {0}".format(" ".join(pre_command)))
+            subprocess.call(args=pre_command, timeout=10)
+
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Executing command: {0}".format(" ".join(command)))
+            subprocess.call(args=command, timeout=1800)
+
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Executing command: {0}".format(" ".join(post_command)))
+            subprocess.call(args=post_command, timeout=10)
+
+        except subprocess.TimeoutExpired:
+            self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+            self._report.log(Report.LOG_LEVEL_ERROR,
+                             ("Could not create export file \"{0}\""
+                              " on host \"{1}\".").format(filename, hostname))
+        except subprocess.CalledProcessError:
+            self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+            self._report.log(Report.LOG_LEVEL_ERROR,
+                             ("Could not create export file \"{0}\""
+                              " on host \"{1}\".").format(filename, hostname))
+        else:
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             ("Created export file \"{0}\""
+                              " on host \"{1}\".").format(filename, hostname))
+
+    def export_subversion_on_host(self, service_info, hostname, host_filename):
+        try:
+            repositories_directory = service_info[ConfigEditor.CONF_KEY_REPOSITORIES_DIRECTORY]
+        except KeyError:
+            self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+            self._report.log(Report.LOG_LEVEL_ERROR,
+                             ("Error in \"{0}\" service configuration"
+                              " of \"{1}\".").format(ConfigEditor.SERVICE_TYPE_MYSQL, host_filename))
+            return
+        # Find all subversion repositories in given directory
+        self._report.log(Report.LOG_LEVEL_INFO, "Listing subversion repositories on host \"{0}\".".format(hostname))
+        try:
+            command = ["ssh",
+                       "-o", "BatchMode=yes",
+                       "-o", "PasswordAuthentication=no",
+                       "-o", "PreferredAuthentications=publickey",
+                       "-q",
+                       "{0}@{1}".format("root", hostname),
+                       'for', 'd', 'in', '`find', repositories_directory, '-maxdepth', '1', '-type', 'd`;',
+                       'do', 'svnlook', 'info', '$d', '>', '/dev/null', '2>&1', '&&', 'echo', '$d;', 'done']
+
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Executing command: {0}".format(" ".join(command)))
+            output = subprocess.check_output(args=command, timeout=10).decode("utf-8").strip()
+            output_list = output.splitlines(False)
+        except subprocess.TimeoutExpired:
+            self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+            self._report.log(Report.LOG_LEVEL_ERROR,
+                             "Connection to host \"{0}\" via ssh is not working (timeout)".format(hostname))
+            return
+        except subprocess.CalledProcessError:
+            self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+            self._report.log(Report.LOG_LEVEL_ERROR,
+                             "Connection to host \"{0}\" via ssh, is not working.".format(hostname))
+            return
+        else:
+            self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_SUCCESS)
+            self._report.log(Report.LOG_LEVEL_INFO,
+                             "Found {0} repositories on host \"{1}\".".format(len(output_list), hostname))
+
+        for repository in output_list:
+            filename = "{0}_repository_{1}".format(ConfigEditor.SERVICE_TYPE_SVN, repository.replace(os.path.sep, "_"))
+            export_path = os.path.join(self._services_export_folder, filename)
+            command = ["ssh",
+                       "-o", "BatchMode=yes",
+                       "-o", "PasswordAuthentication=no",
+                       "-o", "PreferredAuthentications=publickey",
+                       "-q",
+                       "{0}@{1}".format("root", hostname),
+                       "svnadmin", "dump", "-q", repository, ">", export_path]
+            try:
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                 "Executing command: {0}".format(" ".join(command)))
+                subprocess.call(args=command, timeout=1800)
+            except subprocess.TimeoutExpired:
+                self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+                self._report.log(Report.LOG_LEVEL_ERROR,
+                                 ("Could not create export file \"{0}\""
+                                  " on host \"{1}\".").format(filename, hostname))
+            except subprocess.CalledProcessError:
+                self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+                self._report.log(Report.LOG_LEVEL_ERROR,
+                                 ("Could not create export file \"{0}\""
+                                  " on host \"{1}\".").format(filename, hostname))
+            else:
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                 ("Created export file \"{0}\""
+                                  " on host \"{1}\".").format(filename, hostname))
 
     def run_backup(self):
         # Clone files from all hosts
@@ -562,6 +686,8 @@ class BackupApplication:
                         self.export_mysql_on_host(service_info, hostname, host_filename)
                     elif service_type == ConfigEditor.SERVICE_TYPE_POSTGRESQL:
                         self.export_pgsql_on_host(service_info, hostname, host_filename)
+                    elif service_type == ConfigEditor.SERVICE_TYPE_SVN:
+                        self.export_subversion_on_host(service_info, hostname, host_filename)
                     else:
                         self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
                         self._report.log(Report.LOG_LEVEL_INFO,
@@ -619,9 +745,10 @@ class BackupApplication:
         if not os.path.ismount(backup_mount_point):
             self._report.log(Report.LOG_LEVEL_INFO, "Backup HDD is not mounted to \"{0}\"".format(backup_mount_point))
             try:
+                command = ["mount", backup_mount_point]
                 self._report.log(Report.LOG_LEVEL_INFO,
                                  "Executing command: {0}".format(" ".join(command)))
-                subprocess.check_call(["mount", backup_mount_point])
+                subprocess.check_call(command)
             except subprocess.CalledProcessError:
                 self._report.set_job_summary(job_id_string, summary=Report.LOG_SUMMARY_FAIL)
                 self._report.log(Report.LOG_LEVEL_ERROR,

@@ -17,7 +17,7 @@ The content of such a file could look like this:
   "services": {
     "mysql": { "username": "root", "password": "SecrectPassword" },
     "postgresql": { "username": "postgres" },
-    "subversion": { "repositories-directory": "/var/lib/svn" }
+    "subversion": { "repositories_directory": "/var/lib/svn" }
   },
   "directories": [ "/home", "/var/documents" ]
 }
