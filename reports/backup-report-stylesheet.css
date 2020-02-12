@@ -1,0 +1,142 @@
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  src: local('Open Sans'), url(../css/fonts/OpenSans-Regular.ttf);
+}
+
+html ,
+body {
+	font-family: 'Open Sans', sans-serif;
+	font-size: 10.5pt;
+	margin: 0px;
+	padding: 0px;
+	min-width: 960px;
+	background-color: #E0E0E0;
+	hyphens: auto;
+}
+a:link ,
+a:visited ,
+a:active {
+	color: black;
+	text-decoration: none;
+}
+a:hover {
+	color: black;
+	text-decoration: underline;
+}
+div {
+	position:relative;
+	left:0px;
+	top:0px;
+	float: left;
+}
+img {
+	border-width:0px;
+}
+
+div.position {
+    width: 940px;
+    margin-left: -470px;
+	position: absolute;
+	left: 50%;
+}
+
+div.report {
+    width: 900px;
+	background-color: white;
+    box-shadow: 3px 3px 8px black;
+	padding: 30px 20px;
+}
+
+h1 {
+	display: block;
+	float: left;
+	width: 100%;
+	padding: 0 0 4px 0;
+	margin: 0;
+	line-height: 125%;
+	font-size: 200%;
+	font-weight: normal;
+	text-align: center;
+}
+h2 {
+	color: navy;
+	display: block;
+	float: left;
+	width: 100%;
+	padding: 30px 0 4px 0;
+	margin: 0;
+	line-height: 125%;
+	font-size: 141%;
+	font-weight: normal;	
+}
+
+
+div.summary {
+	width: 100%;
+}
+
+div.summary_line {
+	width: 100%;
+}
+div.summary_cell_host,
+div.summary_cell_job,
+div.summary_cell_result,
+div.summary_cell_runtime_data {
+	padding: 2px 0;
+}
+
+
+div.summary_cell_host,
+div.summary_cell_job {
+	width: 800px;
+}
+div.summary_cell_result  {
+	width: 100px;
+	text-align: center;
+}
+div.summary_cell_runtime_data {
+	width: 100%;
+}
+div.log_line {
+	width: 100%;
+	border-top: 1px solid silver;
+	font-size: 80%;
+}
+div.log_timestamp,
+div.log_level,
+div.log_message {
+	padding: 2px 0;
+}
+
+
+div.log_timestamp {
+	width: 150px;
+}
+div.log_level  {
+	width: 60px;
+	text-align: center;
+}
+
+div.log_message {
+	width: 680px;
+	padding-left: 10px;
+}
+
+.info {
+	background-color: silver;
+}
+.warn {
+	background-color: yellow;
+}
+.error {
+	background-color: red;
+}
+.success {
+	background-color: green;
+}
+.fail {
+	background-color: red;
+}
+
+
