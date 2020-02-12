@@ -234,6 +234,7 @@ class BackupApplication:
         file_name_list = []
         pattern = os.path.join(folder_path, self.CONFIGURATION_FILE_NAME_PATTERN)
         path_list = glob.glob(pattern)
+        path_list.sort()
         if len(path_list) == 0:
             self._report.log(Report.LOG_LEVEL_WARN, "There are .json files in \"{0}\".".format(folder_path))
         for file_path in path_list:
