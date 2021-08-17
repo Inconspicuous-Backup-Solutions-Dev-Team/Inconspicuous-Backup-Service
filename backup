@@ -356,8 +356,8 @@ class BackupApplication:
                 storage_file_name = job_config[ConfigEditor.CONF_KEY_STORAGE] + self.CONFIGURATION_FILE_NAME_EXTENSION
                 if storage_file_name not in self._storage_file_list:
                     job_config_is_ok = False
-                    print(storage_file_name)
-                    print(self._storage_file_list)
+                    #print(storage_file_name)
+                    #print(self._storage_file_list)
                     self._report.log(Report.LOG_LEVEL_ERROR,
                                      "Job configuration file \"{0}\" contains ".format(job_filename) +
                                      "invalid storage reference.")
@@ -391,6 +391,7 @@ class BackupApplication:
             host_filename = self._host_file_list[index]
             # Test ssh connectivity
             hostname = host_config[ConfigEditor.CONF_KEY_HOST]
+            username = host_config.get(ConfigEditor.CONF_KEY_USERNAME, "root")
             self._report.set_host_summary(host_filename, hostname)
             self._report.log(Report.LOG_LEVEL_INFO,
                              "Testing connection to host \"{0}\" via ssh is working.".format(hostname))
@@ -400,7 +401,7 @@ class BackupApplication:
                            "-o", "PasswordAuthentication=no",
                            "-o", "PreferredAuthentications=publickey",
                            "-q",
-                           "{0}@{1}".format("root", hostname), "exit"]
+                           "{0}@{1}".format(username, hostname), "exit"]
                 self._report.log(Report.LOG_LEVEL_INFO,
                                  "Executing command: {0}".format(" ".join(command)))
                 subprocess.run(args=command,
@@ -426,13 +427,23 @@ class BackupApplication:
             if len(path_list) == 0:
                 self._report.log(Report.LOG_LEVEL_WARN, "No paths defined for host \"{0}\".".format(hostname))
             for path in path_list:
+                if type(path) is dict:
+                    path_dict = path
+                    try:
+                        path = path_dict[ConfigEditor.CONF_KEY_DIRECTORIES_PATH]
+                        _ = path_dict[ConfigEditor.CONF_KEY_DIRECTORIES_EXCLUDES]
+                    except KeyError:
+                        self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+                        self._report.log(Report.LOG_LEVEL_ERROR,
+                                        "Path configuration for host \"{0}\" is faulty.".format(hostname))
+                        continue
                 try:
                     command = ["ssh",
                                "-o", "BatchMode=yes",
                                "-o", "PasswordAuthentication=no",
                                "-o", "PreferredAuthentications=publickey",
                                "-q",
-                               "{0}@{1}".format("root", hostname),
+                               "{0}@{1}".format(username, hostname),
                                "[[", "-d", path, "]]", "&&", "echo", "\"TRUE\"", "||", "echo", "\"FALSE\""]
                     self._report.log(Report.LOG_LEVEL_INFO,
                                      "Executing command: {0}".format(" ".join(command)))
@@ -460,20 +471,51 @@ class BackupApplication:
         storage_config = self._storage_list[index]
         return storage_config
 
-    def create_service_export_folder_on_host(self, hostname, host_filename):
+    def execute_backup_command(self, command, hostname, host_username, host_filename):
+        if command:
+            full_command = ["ssh",
+                            "-o", "BatchMode=yes",
+                            "-o", "PasswordAuthentication=no",
+                            "-o", "PreferredAuthentications=publickey",
+                            "-q",
+                            "{0}@{1}".format(host_username, hostname)]
+            full_command.extend(command)
+            try:
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                "Executing command: {0}".format(" ".join(full_command)))
+                subprocess.run(args=full_command, timeout=10)
+            except subprocess.TimeoutExpired:
+                self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+                self._report.log(Report.LOG_LEVEL_ERROR,
+                                ("Could not execute command \"{0}\""
+                                " on host \"{1}\" (timeout).").format(" ".join(command), hostname))
+            except subprocess.CalledProcessError:
+                self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+                self._report.log(Report.LOG_LEVEL_ERROR,
+                                ("Failed execute command \"{0}\""
+                                " on host \"{1}\" successfully.").format(" ".join(command), hostname))
+            else:
+                self._report.log(Report.LOG_LEVEL_INFO,
+                                ("Executed command \"{0}\""
+                                " on host \"{1}\" with success.").format(" ".join(command), hostname))
+                return True
+            return False
+        return None
+
+    def create_service_export_folder_on_host(self, hostname, host_username, host_filename):
         mkdir_command = ["ssh",
                          "-o", "BatchMode=yes",
                          "-o", "PasswordAuthentication=no",
                          "-o", "PreferredAuthentications=publickey",
                          "-q",
-                         "{0}@{1}".format("root", hostname),
+                         "{0}@{1}".format(host_username, hostname),
                          "mkdir", "-p", self._services_export_folder]
         chmod_command = ["ssh",
                          "-o", "BatchMode=yes",
                          "-o", "PasswordAuthentication=no",
                          "-o", "PreferredAuthentications=publickey",
                          "-q",
-                         "{0}@{1}".format("root", hostname),
+                         "{0}@{1}".format(host_username, hostname),
                          "chmod", "700", self._services_export_folder]
         try:
             self._report.log(Report.LOG_LEVEL_INFO,
@@ -499,7 +541,7 @@ class BackupApplication:
             return True
         return False
 
-    def export_mysql_on_host(self, service_info, hostname, host_filename):
+    def export_mysql_on_host(self, service_info, hostname, host_username, host_filename):
         filename = "{0}_export.sql".format(ConfigEditor.SERVICE_TYPE_MYSQL)
         export_path = os.path.join(self._services_export_folder, filename)
         try:
@@ -516,7 +558,7 @@ class BackupApplication:
                    "-o", "PasswordAuthentication=no",
                    "-o", "PreferredAuthentications=publickey",
                    "-q",
-                   "{0}@{1}".format("root", hostname),
+                   "{0}@{1}".format(host_username, hostname),
                    "mysqldump", "-u", username, "-p{0}".format(password), "--all-databases", ">", export_path]
         reportable_command = [parameter.replace("-p{0}".format(password), "-p--------") for parameter in command]
         try:
@@ -538,7 +580,7 @@ class BackupApplication:
                              ("Created export file \"{0}\""
                               " on host \"{1}\".").format(filename, hostname))
 
-    def export_pgsql_on_host(self, service_info, hostname, host_filename):
+    def export_pgsql_on_host(self, service_info, hostname, host_username, host_filename):
         filename = "{0}_export.sql".format(ConfigEditor.SERVICE_TYPE_POSTGRESQL)
         export_path = os.path.join(self._services_export_folder, filename)
         try:
@@ -554,22 +596,22 @@ class BackupApplication:
                    "-o", "PasswordAuthentication=no",
                    "-o", "PreferredAuthentications=publickey",
                    "-q",
-                   "{0}@{1}".format("root", hostname),
+                   "{0}@{1}".format(host_username, hostname),
                    "chown", username ,self._services_export_folder]
         command = ["ssh",
                    "-o", "BatchMode=yes",
                    "-o", "PasswordAuthentication=no",
                    "-o", "PreferredAuthentications=publickey",
                    "-q",
-                   "{0}@{1}".format("root", hostname),
+                   "{0}@{1}".format(host_username, hostname),
                    "sudo", "-u", username, "pg_dumpall", ">",  export_path]
         post_command = ["ssh",
                    "-o", "BatchMode=yes",
                    "-o", "PasswordAuthentication=no",
                    "-o", "PreferredAuthentications=publickey",
                    "-q",
-                   "{0}@{1}".format("root", hostname),
-                   "chown", "root" ,self._services_export_folder]
+                   "{0}@{1}".format(host_username, hostname),
+                   "chown", host_username ,self._services_export_folder]
         try:
             self._report.log(Report.LOG_LEVEL_INFO,
                              "Executing command: {0}".format(" ".join(pre_command)))
@@ -598,7 +640,7 @@ class BackupApplication:
                              ("Created export file \"{0}\""
                               " on host \"{1}\".").format(filename, hostname))
 
-    def export_subversion_on_host(self, service_info, hostname, host_filename):
+    def export_subversion_on_host(self, service_info, hostname, host_username, host_filename):
         try:
             repositories_directory = service_info[ConfigEditor.CONF_KEY_REPOSITORIES_DIRECTORY]
         except KeyError:
@@ -615,7 +657,7 @@ class BackupApplication:
                        "-o", "PasswordAuthentication=no",
                        "-o", "PreferredAuthentications=publickey",
                        "-q",
-                       "{0}@{1}".format("root", hostname),
+                       "{0}@{1}".format(host_username, hostname),
                        'for', 'd', 'in', '`find', repositories_directory, '-maxdepth', '1', '-type', 'd`;',
                        'do', 'svnlook', 'info', '$d', '>', '/dev/null', '2>&1', '&&', 'echo', '$d;', 'done']
 
@@ -646,7 +688,7 @@ class BackupApplication:
                        "-o", "PasswordAuthentication=no",
                        "-o", "PreferredAuthentications=publickey",
                        "-q",
-                       "{0}@{1}".format("root", hostname),
+                       "{0}@{1}".format(host_username, hostname),
                        "svnadmin", "dump", "-q", repository, ">", export_path]
             try:
                 self._report.log(Report.LOG_LEVEL_INFO,
@@ -675,29 +717,49 @@ class BackupApplication:
             host_config = self._host_list[host_index]
             host_filename = self._host_file_list[host_index]
             hostname = host_config[ConfigEditor.CONF_KEY_HOST]
+            username = host_config.get(ConfigEditor.CONF_KEY_USERNAME, "root")
+            pre_backup_command = host_config.get(ConfigEditor.CONF_KEY_PRE_BACKUP_COMMAND, None)
+            post_backup_command = host_config.get(ConfigEditor.CONF_KEY_POST_BACKUP_COMMAND, None)
             host_backup_folder = os.path.splitext(host_filename)[0]
             path_list = host_config[ConfigEditor.CONF_KEY_DIRECTORIES]
             service_list = host_config[ConfigEditor.CONF_KEY_SERVICES]
             self._report.set_host_summary(host_filename, hostname)
+            self.execute_backup_command(pre_backup_command, hostname, username, host_filename)
             if type(service_list) == dict and len(service_list) > 0:
-                self.create_service_export_folder_on_host(hostname, host_filename)
+                self.create_service_export_folder_on_host(hostname, username, host_filename)
                 path_list.insert(0, self._services_export_folder)
                 for service_type, service_info in service_list.items():
                     if service_type == ConfigEditor.SERVICE_TYPE_MYSQL:
-                        self.export_mysql_on_host(service_info, hostname, host_filename)
+                        self.export_mysql_on_host(service_info, hostname, username, host_filename)
                     elif service_type == ConfigEditor.SERVICE_TYPE_POSTGRESQL:
-                        self.export_pgsql_on_host(service_info, hostname, host_filename)
+                        self.export_pgsql_on_host(service_info, hostname, username, host_filename)
                     elif service_type == ConfigEditor.SERVICE_TYPE_SVN:
-                        self.export_subversion_on_host(service_info, hostname, host_filename)
+                        self.export_subversion_on_host(service_info, hostname, username, host_filename)
                     else:
                         self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
                         self._report.log(Report.LOG_LEVEL_INFO,
                                          "Not supported service type \"{0}\" for host \"{1}\".".format(service_type,
                                                                                                        host_filename))
             for path in path_list:
-                source_uri = "{0}@{1}:{2}{3}".format("root", hostname, path, os.path.sep)
+                exclude_list = None
+                if type(path) is dict:
+                    path_dict = path
+                    try:
+                        path = path_dict[ConfigEditor.CONF_KEY_DIRECTORIES_PATH]
+                        exclude_list = path_dict[ConfigEditor.CONF_KEY_DIRECTORIES_EXCLUDES]
+                    except KeyError:
+                        self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_FAIL)
+                        self._report.log(Report.LOG_LEVEL_ERROR,
+                                        "Path configuration for host \"{0}\" is faulty.".format(hostname))
+                        continue
+                source_uri = "{0}@{1}:{2}{3}".format(username, hostname, path, os.path.sep)
                 target_uri = os.path.join(basic_backup_folder, host_backup_folder, path.lstrip(os.path.sep))
-                command = ["rsync", "-avz", "--delete", "-e", "ssh", source_uri, target_uri]
+                command = ["rsync", "-avz", "--delete"]
+                if exclude_list:
+                    for exclude_string in exclude_list:
+                            exclude = "--exclude='{0}'".format(exclude_string) 
+                            command.append(exclude)
+                command.extend(["-e", "ssh", source_uri, target_uri])
                 if not os.path.exists(target_uri):
                     os.makedirs(target_uri)
                 try:
@@ -716,6 +778,8 @@ class BackupApplication:
                     self._report.set_host_summary(host_filename, summary=Report.LOG_SUMMARY_SUCCESS)
                     self._report.log(Report.LOG_LEVEL_INFO,
                                      "Directory {0} on host \"{1}\" cloned without errors.".format(path, hostname))
+            self.execute_backup_command(post_backup_command, hostname, username, host_filename)
+
         self._report.log(Report.LOG_LEVEL_INFO, "Cloning files from hosts is done.")
         # Run backup jobs
         self._report.log(Report.LOG_LEVEL_INFO, "Beginning backup jobs.")
