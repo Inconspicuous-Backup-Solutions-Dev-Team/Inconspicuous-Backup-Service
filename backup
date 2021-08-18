@@ -757,8 +757,8 @@ class BackupApplication:
                 command = ["rsync", "-avz", "--delete"]
                 if exclude_list:
                     for exclude_string in exclude_list:
-                            exclude = "--exclude='{0}'".format(exclude_string) 
-                            command.append(exclude)
+                            command.append("--exclude")
+                            command.append(exclude_string)
                 command.extend(["-e", "ssh", source_uri, target_uri])
                 if not os.path.exists(target_uri):
                     os.makedirs(target_uri)
